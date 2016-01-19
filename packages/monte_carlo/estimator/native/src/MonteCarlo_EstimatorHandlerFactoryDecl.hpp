@@ -165,7 +165,7 @@ private:
 
   // Create a surface current estimator
   static void createSurfaceCurrentEstimator(
-         const unsigned id,
+     const unsigned id,
 	 const double multiplier,
 	 const Teuchos::Array<ParticleType> particle_types,
 	 const Teuchos::Array<Geometry::ModuleTraits::InternalSurfaceHandle>&
@@ -176,6 +176,17 @@ private:
 
   // Create a tet mesh track length flux estimator
   static void createTetMeshTrackLengthFluxEstimator(
+	 const unsigned id,
+	 const double multiplier,
+	 const Teuchos::Array<ParticleType> particle_types,
+	 const Teuchos::Array<Teuchos::RCP<ResponseFunction> >& response_funcs,
+	 const std::string& mesh_file_name,
+	 const std::string& output_mesh_file_name,
+	 const bool energy_multiplication = false,
+	 const Teuchos::ParameterList* bins = NULL );
+
+  // Create a hex mesh track length flux estimator
+  static void createHexMeshTrackLengthFluxEstimator(
 	 const unsigned id,
 	 const double multiplier,
 	 const Teuchos::Array<ParticleType> particle_types,
@@ -233,6 +244,9 @@ private:
 
   // The tet mesh track-length flux estimator name
   static const std::string tet_mesh_track_length_flux_name;
+
+  // The hex mesh track-length flux estimator name
+  static const std::string hex_mesh_track_length_flux_name;
 };
 
 //! The invalid estimator representation error

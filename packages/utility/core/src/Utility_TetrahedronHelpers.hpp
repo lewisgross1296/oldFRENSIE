@@ -36,7 +36,7 @@ void calculateBarycentricTransformMatrix( const double vertex_a[3],
                                           const double vertex_b[3],
                                           const double vertex_c[3],
                                           const double reference_vertex[3],
-					  Matrix& matrix );
+                                          Matrix& matrix );
 
 //! Calculate tetrahedron barycentric transform matrix
 template<typename Matrix>
