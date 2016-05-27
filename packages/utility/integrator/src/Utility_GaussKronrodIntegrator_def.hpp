@@ -17,6 +17,7 @@
 #include "Utility_ExceptionTestMacros.hpp"
 #include "Utility_IntegratorException.hpp"
 #include "Utility_SortAlgorithms.hpp"
+#include "Utility_QuantityTraits.hpp"
 #include "Utility_GaussKronrodQuadratureSetTraits.hpp"
 
 namespace Utility{
@@ -26,12 +27,10 @@ template<typename T>
 GaussKronrodIntegrator<T>::GaussKronrodIntegrator( 
     const T relative_error_tol,
     const T absolute_error_tol,
-    const size_t subinterval_limit,
-    const bool std_units )
+    const size_t subinterval_limit )
   : d_relative_error_tol( relative_error_tol ),
     d_absolute_error_tol( absolute_error_tol ),
-    d_subinterval_limit( subinterval_limit ),
-    d_std_units( std_units )
+    d_subinterval_limit( subinterval_limit )
 {
   // Make sure the error tolerances are valid
   testPrecondition( relative_error_tol >= (T)0 );
@@ -65,7 +64,7 @@ void GaussKronrodIntegrator<T>::rescaleAbsoluteError(
       }  
       else
       {    
-      absolute_error = result_asc;
+        absolute_error = result_asc;
       }  
     };
 
