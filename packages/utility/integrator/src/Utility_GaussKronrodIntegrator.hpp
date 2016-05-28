@@ -9,42 +9,17 @@
 #ifndef UTILITY_GAUSS_KRONROD_INTEGRATOR_HPP
 #define UTILITY_GAUSS_KRONROD_INTEGRATOR_HPP
 
-// std Includes
+// Std Includes
 #include <queue>
 
 // Trilinos Includes
 #include <Teuchos_Array.hpp>
 
+// FRENSIE Includes
+#include "Utility_QuadratureBin.hpp"
+#include "Utility_ExtrapolatedQuadratureBin.hpp"
+
 namespace Utility{
-
-template<typename T>
-struct BinTraits
-{
-  T lower_limit;
-  T upper_limit;
-  T result;
-  T error;
-
-  bool operator <( const BinTraits<T>& bins ) const
-  {
-    return error < bins.error;
-  }
-};
-
-template<typename T>
-struct ExtrpolatedBinTraits
-{
-  T lower_limit;
-  T upper_limit;
-  T result;
-  T error;
-  int level;
-
-  bool operator <( const ExtrpolatedBinTraits<T>& bins ) const
-  {
-    return error < bins.error;
-  }
-};
 
 //! The Gauss-Kronrod integrator
 template<typename T>
@@ -57,10 +32,10 @@ private:
   typedef Utility::QuantityTraits<T> QT;
 
   // The bin traits priority queue
-  typedef std::priority_queue<BinTraits<T>> BinQueue;
+  typedef std::priority_queue<QuadratureBin<T> > BinQueue;
 
-  // THe bin traits array
-  typedef Teuchos::Array<ExtrpolatedBinTraits<T>> BinArray;
+  // The bin traits array
+  typedef Teuchos::Array<ExtrapolatedQuadratureBin<T> > BinArray;
 
 public:
 
@@ -138,6 +113,27 @@ public:
 			  T& absolute_error ) const;
 
 protected:
+
+  // Conduct the first iteration of the adapative integration
+  template<int Points, typename Functor>
+  bool integrateAdaptivelyInitialIteration( Functor& integrand,
+                                            QuadratureBin<T>& bin ) const;
+
+  // Conduct the other iterations of the adaptive integration
+  template<int Points, typename Functor>
+  void integrateAdaptivelyIterate( Functor& integrand,
+                                   QuadratureBin<T>& initial_bin,
+                                   T& result,
+                                   T& absolute_error ) const;
+
+  // Initialize the bins for the adaptive Wynn Epsilon integration
+  template<int Points, typename Functor>
+  bool initializeBinsWynnEpsilon(
+                               Functor& integrand,
+                               const Teuchos::ArrayView<T>& points_of_interest,
+                               Teuchos::Array<unsigned>& bin_order,
+                               T& result,
+                               T& absolute_error ) const;
   
   // Calculate the quadrature upper and lower integrand values at an abscissa
   template<typename Functor>
@@ -173,9 +169,9 @@ protected:
 
   // check the roundoff error 
   void checkRoundoffError( 
-                       const BinTraits<T>& bin, 
-                       const BinTraits<T>& bin_1, 
-                       const BinTraits<T>& bin_2,    
+                       const QuadratureBin<T>& bin, 
+                       const QuadratureBin<T>& bin_1, 
+                       const QuadratureBin<T>& bin_2,    
                        const T& bin_1_asc,
                        const T& bin_2_asc,
                        int& round_off_1,
@@ -184,9 +180,9 @@ protected:
 
   // check the roundoff error 
   void checkRoundoffError( 
-                       const ExtrpolatedBinTraits<T>& bin, 
-                       const ExtrpolatedBinTraits<T>& bin_1, 
-                       const ExtrpolatedBinTraits<T>& bin_2,    
+                       const ExtrapolatedQuadratureBin<T>& bin, 
+                       const ExtrapolatedQuadratureBin<T>& bin_1, 
+                       const ExtrapolatedQuadratureBin<T>& bin_2,    
                        const T& bin_1_asc,
                        const T& bin_2_asc,
                        int& round_off_1,
@@ -199,8 +195,8 @@ protected:
   void sortBins( 
         Teuchos::Array<int>& bin_order,
         BinArray& bin_array, 
-        const ExtrpolatedBinTraits<T>& bin_1,
-        const ExtrpolatedBinTraits<T>& bin_2,
+        const ExtrapolatedQuadratureBin<T>& bin_1,
+        const ExtrapolatedQuadratureBin<T>& bin_2,
         const int& number_of_intervals,
         int& nr_max ) const;
 

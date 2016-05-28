@@ -19,7 +19,7 @@ template<typename IndepQuantity, typename ResultQuantity = IndepQuantity>
 class QuadratureBin
 {
 
-private:
+protected:
 
   // Quantity traits for the IndepQuantity
   typedef Utility::QuantityTraits<IndepQuantity> IQT;
