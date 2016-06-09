@@ -59,24 +59,16 @@ struct QuantityTraits
   static inline QuantityType one()
   { return UndefinedQuantityTraits<T>::notDefined(); }
 
+  //! Machine epsilon (least value > 1 that is representable minus 1)
+  static inline QuantityType epsilon()
+  { return UndefinedQuantityTraits<T>::notDefined(); }
+
   //! Get the inf quantity (only available for floating point quantities)
   static inline QuantityType inf()
   { return UndefinedQuantityTraits<T>::notDefined(); }
 
   //! Get the nan quantity (only available for floating point quantities)
   static inline QuantityType nan()
-  { return UndefinedQuantityTraits<T>::notDefined(); }
-
-  //! Get the conjugate of a quantity
-  static inline QuantityType conjugate( const QuantityType& a )
-  { return UndefinedQuantityTraits<T>::notDefined(); }
-
-  //! Get the real part of the quantity
-  static inline QuantityType real( const QuantityType& a )
-  { return UndefinedQuantityTraits<T>::notDefined(); }
-
-  //! Get the imaginary part of the quantity
-  static inline QuantityType imag( const QuantityType& a )
   { return UndefinedQuantityTraits<T>::notDefined(); }
 
   /*! \brief Test if the quantity is a nan or inf (only available for floating point quantities)
@@ -113,7 +105,7 @@ struct QuantityTraits
  * \ingroup quantity_traits
  */
 template<typename T, typename Enabled = void>
-struct QuantityTraitsHelper
+struct QuantityTraitsFloatingHelper
 { /* ... */ };
 
 /*! This function allows access to the sqrt QuantityTraits function

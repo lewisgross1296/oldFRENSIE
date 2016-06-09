@@ -18,17 +18,16 @@
 #include <boost/utility/enable_if.hpp>
 #include <boost/type_traits/is_arithmetic.hpp>
 #include <boost/type_traits/is_floating_point.hpp>
-
-// Trilinos Includes
-#include <Teuchos_ScalarTraits.hpp>
+#include <boost/multiprecision/cpp_bin_float.hpp>
+#include <boost/multiprecision/cpp_dec_float.hpp>
 
 // FRENSIE Includes
 #include "Utility_QuantityTraitsDecl.hpp"
 
 namespace Utility{
 
-/*! \brief The QuantityTraitsHelper partial specialization for floating point 
- * boost::units::quantity
+/*! \brief The QuantityTraitsFloatingHelper partial specialization for 
+ * boost::units::quantity with floating point types.
  * \ingroup quantity_traits
  */
 template<typename Unit, typename T>
@@ -39,11 +38,14 @@ private:
   typedef T RawType;
 
 public:
+  static inline QuantityType epsilon()
+  { return QuantityType::from_value( std::numeric_limits<RayType>::epsilon() ); }
+  
   static inline QuantityType inf()
   { return QuantityType::from_value( std::numeric_limits<RawType>::infinity() ); }
 
   static inline QuantityType nan()
-  { return QuantityType::from_value( Teuchos::ScalarTraits<RawType>::nan() ); }
+  { return QuantityType::from_value( std::numeric_limits<RawType>::quiet_NaN() ); }
 
   static inline bool isnaninf( const QuantityType& a )
   { return Teuchos::ScalarTraits<RawType>::isnaninf( a.value() ); }
@@ -54,7 +56,7 @@ public:
  * \ingroup quantity_traits
  */
 template<typename Unit, typename T>
-struct QuantityTraits<boost::units::quantity<Unit,T>, typename boost::enable_if<boost::is_arithmetic<T> >::type> : public QuantityTraitsHelper<boost::units::quantity<Unit,T> >
+struct QuantityTraits<boost::units::quantity<Unit,T>, typename boost::enable_if<boost::is_arithmetic<T> >::type> : public QuantityTraitsFloatingHelper<boost::units::quantity<Unit,T> >
 {
   typedef Unit UnitType;
   typedef T RawType;
@@ -72,15 +74,6 @@ struct QuantityTraits<boost::units::quantity<Unit,T>, typename boost::enable_if<
 
   static inline QuantityType one()
   { return QuantityType::from_value( RawType(1) ); }
-
-  static inline QuantityType conjugate( const QuantityType& a )
-  { return QuantityType::from_value( Teuchos::ScalarTraits<RawType>::conjugate( a.value() ) ); }
-
-  static inline QuantityType real( const QuantityType& a )
-  { return QuantityType::from_value( Teuchos::ScalarTraits<RawType>::real( a.value() ) ); }
-
-  static inline QuantityType imag( const QuantityType& a )
-  { return QuantityType::from_value( Teuchos::ScalarTraits<RawType>::imag( a.value() ) ); }
 
   //! Possible bug in boost::units::sqrt
   static inline typename GetQuantityToPowerType<1,2>::type sqrt( const QuantityType& quantity )
@@ -106,26 +99,84 @@ struct QuantityTraits<boost::units::quantity<Unit,T>, typename boost::enable_if<
   { quantity = QuantityType::from_value( raw_quantity ); }
 };
 
-/*! \brief The QuantityTraitsHelper partial specialization for floating point 
-  types (no units).
+/*! \brief The QuantityTraitsFloatingHelper partial specialization for floating
+ * point types (no units).
  * \ingroup quantity_traits
  */
 template<typename T>
-struct QuantityTraitsHelper<T,typename boost::enable_if<boost::is_floating_point<T> >::type>
+struct QuantityTraitsFloatingHelper<T,typename boost::enable_if<boost::is_floating_point<T> >::type>
 {
 private:
   typedef T QuantityType;
 
 public:
 
+  static inline QuantityType epsilon()
+  { return std::numeric_limits<QuantityType>::epsilon() ); }
+
   static inline QuantityType inf()
   { return std::numeric_limits<QuantityType>::infinity(); }
 
   static inline QuantityType nan()
-  { return Teuchos::ScalarTraits<QuantityType>::nan(); }
+  { return std::numeric_limits<QuantityType>::quiet_NaN(); }
 
+  
   static inline bool isnaninf( const QuantityType& a )
-  { return Teuchos::ScalarTraits<QuantityType>::isnaninf(a); }
+  {
+    // Check if NaN
+    if( isnanIEEE( a ) )
+      return true;
+
+    // Check if Inf
+    else if( isInfIEEE( a ) )
+      return true;
+
+    // Check if Inf - basic
+    else if( isInf( a ) )
+      return true;
+
+    // Not NaN or Inf
+    else
+      return false;
+  }
+
+protected:
+
+  /*! Test for quiet NaN using IEEE standard 
+   * \details Only guaranteed to work with compliant compilers.
+   */
+  static inline bool isNaNIEEE( const QuantityType& a )
+  { 
+    const QuantityType tol = 0.0;
+    
+    if( !(x <= tol) && !(x > tol) )
+      return true;
+    else
+      return false;
+  }
+
+  /*! Test for Inf using IEEE standard
+   * \details Only guaranteed to work with compliant compilers.
+   */
+  static inline bool isInfIEEE( const QuantityType& a )
+  {
+    // Inf*0.0 -> NaN
+    const QuantityType possible_nan = static_cast<QuantityType>(0.0)*a;
+
+    return isNaNIEEE( possible_nan );
+  }
+
+  /*! Test for Inf using comparison
+   * \details This is not the IEEE recommended test
+   */
+  static inline isInf( const QuantityType& a )
+  {
+    if( a == std::numeric_limits<QuantityType>::infinity() ||
+        a == -std::numeric_limits<QuantityType>::infinity() )
+      return true;
+    else
+      return false;
+  }
 };
 
 /*! The specialization of QuantityTraits for all arithmetic types (no units).
@@ -134,7 +185,7 @@ public:
  * \ingroup quantity_traits
  */
 template<typename T>
-struct QuantityTraits<T,typename boost::enable_if<boost::is_arithmetic<T> >::type> : public QuantityTraitsHelper<T>
+struct QuantityTraits<T,typename boost::enable_if<boost::is_arithmetic<T> >::type> : public QuantityTraitsFloatingHelper<T>
 {
   typedef void Unit;
   typedef T RawType;
@@ -150,15 +201,6 @@ struct QuantityTraits<T,typename boost::enable_if<boost::is_arithmetic<T> >::typ
 
   static inline QuantityType one()
   { return RawType(1); }
-
-  static inline QuantityType conjugate( const QuantityType& a )
-  { return Teuchos::ScalarTraits<QuantityType>::conjugate(a); }
-
-  static inline QuantityType real( const QuantityType& a )
-  { return Teuchos::ScalarTraits<QuantityType>::real(a); }
-
-  static inline QuantityType imag( const QuantityType& a )
-  { return Teuchos::ScalarTraits<QuantityType>::imag(a); }
 
   static inline QuantityType sqrt( const QuantityType quantity )
   { return std::sqrt( quantity ); }
