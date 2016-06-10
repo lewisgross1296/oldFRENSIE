@@ -74,7 +74,7 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
                                        Functor& integrand, 
                                        ArgQuantity lower_limit, 
                                        ArgQuantity upper_limit,
-                                       IntegralQuantity& result,
+                                       IntegralQuantity& integral,
 				       IntegralQuantity& absolute_error ) const
 {
   // Make sure the integration limits are valid
@@ -95,7 +95,7 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
   // Check for fast convergence
   if( converged )
   {
-    result = bin.getResult();
+    integral = bin.getResult();
     absolute_error = bin.getAbsoluteError();
     
     return;
@@ -112,7 +112,7 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
     try{
       this->integrateAdaptivelyIterate( integrand,
                                         bin,
-                                        result,
+                                        integral,
                                         absolute_error );
     }
     EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
@@ -135,173 +135,336 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
 template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
 template<int Points, typename Functor>
 void UnitAwareGaussKronrodIntegrator<T>::integrateWithPointRule(
-                                           Functor& integrand, 
-                                           ArgQuantity lower_limit, 
-                                           ArgQuantity upper_limit,
-                                           IntegralQuantity& result,
-                                           IntegralQuantity& absolute_error,
-                                           IntegralQuantity& result_abs, 
-                                           IntegralQuantity& result_asc ) const
+                                         Functor& integrand, 
+                                         ArgQuantity lower_limit, 
+                                         ArgQuantity upper_limit,
+                                         IntegralQuantity& integral,
+                                         IntegralQuantity& absolute_error,
+                                         IntegralQuantity& integral_abs, 
+                                         IntegralQuantity& integral_asc ) const
 {
   // Make sure the integration limits are valid
   testPrecondition( lower_limit <= upper_limit );
-
-  // Get the quadrature set traits for the requested point rule
-  typedef GaussKronrodQuadratureSetTraits<ArgUnit,FloatType> GKQST;
   
   if( lower_limit < upper_limit )
   {
-    // Calculate the midpoint
-    ArgQuantity midpoint = (upper_limit + lower_limit)/2;
+    // The Kronrod integral, integral abs, integral asc
+    integral = IntegralQT::zero();
+    integral_abs = IntegralQT::zero();
+    integral_asc = IntegralQT::zero();
 
-    // Calculate the half the length between the upper and lower integration
-    // limits
-    ArgQuantity half_length = (upper_limit - lower_limit )/(T)2;
-    ArgQuantity abs_half_length = fabs( half_length );
+    // The Gauss integral
+    IntegralQuantity gauss_integral = IntegralQT::zero();
 
-    // Get number of Kronrod weights
-    int number_of_weights = GKQST::getKronrodWeights().size();
+    // Calculate the scale factor
+    ArgQuantity scale_factor = (upper_limit - lower_limit)/2;
 
-    Teuchos::Array<IntegrandQuantity>
-      integrand_values_lower( number_of_weights );
-    Teuchos::Array<IntegrandQuantity>
-      integrand_values_upper( number_of_weights );
-    Teuchos::Array<IntegrandQuantity>
-      integrand_values_sum( number_of_weights );
+    // Calculate the shift factor
+    ArgQuantity shift_factor = (upper_limit + lower_limit)/2;
 
-    // Estimate Kronrod and absolute value integral for all but last weight
-    IntegralQuantity kronrod_result = IntegralQT::zero();
-    result_abs = IntegralQT::zero();
-    
-    for( int j = 0; j < number_of_weights-1; j++ )
-    {  
-      this->calculateQuadratureIntegrandValuesAtAbscissa( 
-                                               integrand,
-                                               GKQST::getKronrodAbscissae()[j],
-                                               half_length,
-                                               midpoint,
-                                               integrand_values_lower[j],
-                                               integrand_values_upper[j] );
-
-        
-      integrand_values_sum[j] = 
-        integrand_values_lower[j] + integrand_values_upper[j];
-      
-      kronrod_result +=
-        GKQST::getKronrodWeights()[j]*integrand_values_sum[j];
-      
-      result_abs += GKQST::getKronrodWeights()[j]*
-        (fabs( integrand_values_lower[j] ) +
-         fabs( integrand_values_upper[j] ) );
-    };
-
-    // Integrand at the midpoint
-    IntegrandQuantity integrand_midpoint = integrand( midpoint );
-
-    // Estimate Kronrod integral for the last weight
-    IntegralQuantity kronrod_result_last_weight = integrand_midpoint*
-      GKQST::getKronrodWeights().back();
-
-    // Update Kronrod estimate and absolute value with last weight
-    kronrod_result += kronrod_result_last_weight;
-    result_abs += fabs( kronrod_result_last_weight );
-
-    // Calculate final integral result and absolute value
-    result = kronrod_result*half_length;
-    result_abs *= abs_half_length;
-
-    // Calculate the mean kronrod result
-    T mean_kronrod_result = kronrod_result/(T)2;
-
-    // Estimate the result asc for all but the last weight
-    result_asc = (T)0;
-    for ( int j = 0; j < number_of_weights - 1; j++ )
-      {  
-        result_asc += GaussKronrodQuadratureSetTraits<Points>::kronrod_weights[j]*
-          ( fabs( integrand_values_lower[j] - mean_kronrod_result ) +
-            fabs( integrand_values_upper[j] - mean_kronrod_result ) );
-      };
-
-    // Estimate the result asc for the last weight
-    result_asc += GaussKronrodQuadratureSetTraits<Points>::kronrod_weights[number_of_weights-1]*
-        fabs( integrand_midpoint - mean_kronrod_result );
-
-    // Calculate final result acx
-    result_asc *= abs_half_length;
-
-    // Estimate Gauss integral
-    T gauss_result = (T)0;
-
-    for ( int j = 0; j < (number_of_weights-1)/2; j++ )
-      {
-        int jj = j*2 + 1;
-        gauss_result += integrand_values_sum[jj]*
-            GaussKronrodQuadratureSetTraits<Points>::gauss_weights[j];
-      };
-
-    // Update Gauss estimate with last weight if needed
-    if ( number_of_weights % 2 == 0 )
+    // Calculate the unscaled integrals, then scale
     {
-      gauss_result += integrand_midpoint*
-        GaussKronrodQuadratureSetTraits<Points>::gauss_weights[number_of_weights/2 - 1];
+      // Get the quadrature set traits for the requested point rule
+      typedef GaussKronrodQuadratureSetTraits<FloatType> GKQST;
+      
+      // Evaluate the integrand at the kronrod abscissae
+      std::vector<IntegrandQuantity> integrand_values_neg_absc;
+      std::vector<IntegrandQuantity> integrand_values_pos_absc;
+      IntegrandQuantity integrand_value_midpoint_absc;
+
+      this->evaluateIntegrandAtKronrodAbscissae( integrand,
+                                                 integrand_values_neg_absc,
+                                                 integrand_values_pos_absc,
+                                                 integrand_value_midpoint_absc,
+                                                 scale_factor,
+                                                 shift_factor,
+                                                 GKQST::getKronrodAbscissae());
+
+      // Calculate the unscaled kronrod integral
+      IntegrandQuantity unscaled_kronrod_integral =
+        this->calculateUnscaledKronrodIntegral( integrand_values_neg_absc,
+                                                integrand_values_pos_absc,
+                                                integrand_value_midpoint_absc,
+                                                GKQST::getKronrodWeights() );
+
+      // Calculate the unscaled kronrod integral abs
+      IntegrandQuantity unscaled_kronrod_integral_abs =
+        this->calculateUnscaledKronrodIntegralAbs(
+                                                integrand_values_neg_absc,
+                                                integrand_values_pos_absc,
+                                                integrand_values_midpoint_absc,
+                                                GKQST::getKronrodWeights() );
+
+      // Calculate the unscaled kronrod integral asc
+      IntegrandQuantity unscaled_kronrod_integral_asc =
+        this->calculateUnscaledKronrodIntegralAsc(
+                                                integrand_values_neg_absc,
+                                                integrand_values_pos_absc,
+                                                integrand_values_midpoint_absc,
+                                                GKQST::getKronrodWeights(),
+                                                unscaled_kronrod_integral );   
+
+      // Calculate the unscaled gauss integral
+      IntegrandQuantity unscaled_gauss_integral =
+        this->calculateUnscaledGaussIntegral( integrand_values_neg_absc,
+                                              integrand_values_pos_absc,
+                                              integrand_value_midpoint_absc,
+                                              GKQST::getGaussWeights() );
+
+      // Scale the integrals
+      integral = unscaled_kronrod_integral*scale_factor;
+      integral_abs = unscaled_kronrod_integral_abs*fabs( scale_factor );
+      integral_asc = unscaled_kronrod_integral_asc*fabs( scale_factor );
+      
+      gauss_integral = unscaled_gauss_integral*scale_factor;
     }
 
     // Estimate error in integral 
-    absolute_error = fabs( ( kronrod_result - gauss_result ) * half_length );
-    rescaleAbsoluteError( absolute_error, result_abs, result_asc);
-
+    absolute_error = fabs( integral - gauss_integral );
+    
+    this->rescaleAbsoluteError( absolute_error, integral_abs, integral_asc );
   }
   else if( lower_limit == upper_limit )
   {
-    result = IntegralQT::zero();
+    integral = IntegralQT::zero();
     absolute_error = IntegralQT::zero();
   }
-  else // invalid limits
+  else // Invalid limits
   {
     THROW_EXCEPTION( Utility::IntegratorException,
-		     "Invalid integration limits: " << lower_limit << " !< "
-		     << upper_limit << "." );
+		     "Error: Invalid integration limits ( "
+                     << lower_limit << " !< " << upper_limit << ")." );
   }
 }
 
-// Rescale absolute error from integration
-template<typename T>
-void UnitAwareGaussKronrodIntegrator<T>::rescaleAbsoluteError( 
-    T& absolute_error, 
-    T result_abs, 
-    T result_asc ) const
+// Evaluate the integrand at the kronrod abscissae
+// Note: Only the positive abscissae (including 0.0) should be passed to
+//       this method.
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+template<typename Functor>
+IntegralQuantity UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::evaluateIntegrandAtKronrodAbscissae(
+                     Functor& integrand,
+                     std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+                     std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+                     IntegrandQuantity& integrand_value_midpoint_absc,
+                     const ArgQuantity scale_factor,
+                     const ArgQuantity shift_factor,
+                     const std::vector<FloatType>& kronrod_abscissae ) const
 {
-  if ( result_asc != 0 && absolute_error != 0 )
-    {
-      T scale = (T)200 * absolute_error/result_asc;
+  // Make sure the kronrod abscissae are valid
+  testPrecondition( kronrod_abscissae.size() > 0 );
+  testPrecondition( kronrod_abscissae.back() == (FloatType)0.0 );
 
-      if ( scale < (T)1 )
-      {
-        absolute_error = result_asc * pow( scale, 3/(T)2 );
-      }  
-      else
-      {    
-        absolute_error = result_asc;
-      }  
-    };
+  // Get number of positive Kronrod abscissae (not including 0.0)
+  unsigned number_of_pos_abscissae = kronrod_abscissae.size()-1;
+  
+  // Resize the integrand values arrays
+  integrand_values_neg_absc.resize( number_of_pos_abscissae );
+  integrand_values_pos_absc.resize( number_of_pos_abscissae );
 
-  if ( result_abs > std::numeric_limits<T>::min() / 
-        ( (T)50 * std::numeric_limits<T>::epsilon() ) )
-    {
-      T min_error = (T)50*std::numeric_limits<T>::epsilon() * result_abs;
+  // Evaluate the integrand at the pos/neg abscissae (not 0.0)
+  for( int j = 0; j < number_of_pos_abscissae; j++ )
+  {
+    integrand_values_neg_absc[j] =
+      integrand( -scale_factor*kronrod_abscissae[j] + shift_factor );
 
-      if ( min_error > absolute_error ) 
-        {
-          absolute_error = min_error;
-        }
-    };
+    integrand_values_pos_absc[j] =
+      integrand( scale_factor*kronrod_abscissae[j] + shift_factor );    
+  }
+
+  // Evaluate the integrand at the midpoint abscissa
+  integrand_value_midpoint_absc =
+    integrand( scale_factor*kronrod_abscissae.back() + shift_factor );
+}
+
+// Calculate the unscaled kronrod integral
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+IntegralQuantity UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::calculateUnscaledKronrodIntegral(
+               const std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+               const std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+               const IntegrandQuantity& integrand_value_midpoint_absc,
+               const std::vector<FloatType>& kronrod_weights ) const
+{
+  // Make sure the integrand values and kronrod weights are valid
+  testPrecondition( integrand_values_neg_absc.size() ==
+                    integrand_values_pos_absc.size() );
+  testPrecondition( integrand_values_neg_absc.size() + 1 ==
+                    kronrod_weights.size() );
+
+  // The unscaled kronrod integral
+  IntegrandQuantity unscaled_kronrod_integral = IntegrandQT::zero();\
+
+  
+  unsigned number_of_weights = integrand_values_neg_absc.size()+1;
+  
+  // Estimate integral using all but last (midpoint) abscissa
+  for( int j = 0; j < number_of_weights-1; j++ )
+  {  
+    // Both +/- abscissa_j use w_j
+    unscaled_kronrod_integral += kronrod_weights[j]*
+      (integrand_values_neg_absc[j] + integrand_values_pos_absc[j]);
+  }
+    
+  // Update integral with midpoint abscissa value
+  unscaled_kronrod_integral +=
+    integrand_value_midpoint_absc*kronrod_weights.back();
+
+  return unscaled_kronrod_integral;
+}
+
+// Calculate the unscaled kronrod integral abs (used for absolute error calc)
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+IntegralQuantity UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::calculateUnscaledKronrodIntegralAbs(
+               const std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+               const std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+               const IntegrandQuantity& integrand_value_midpoint_absc,
+               const std::vector<FloatType>& kronrod_weights ) const
+{
+  // Make sure the integrand values and kronrod weights are valid
+  testPrecondition( integrand_values_neg_absc.size() ==
+                    integrand_values_pos_absc.size() );
+  testPrecondition( integrand_values_neg_absc.size() + 1 ==
+                    kronrod_weights.size() );
+  
+  // The unscaled kronrod integral
+  IntegrandQuantity unscaled_kronrod_integral_abs = IntegrandQT::zero();
+
+  unsigned number_of_weights = integrand_values_neg_absc.size()+1;
+
+  // Estimate integral abs using all but last (midpoint) abscissa
+  for( int j = 0; j < number_of_weights-1; j++ )
+  {  
+    // Both +/- abscissa_j use w_j
+    unscaled_kronrod_integral_abs += kronrod_weights[j]*
+      (fabs( integrand_values_neg_absc[j] ) +
+       fabs( integrand_values_pos_absc[j] ));
+  }
+
+  // Update integral abs with midpoint abscissa value
+  unscaled_kronrod_integral_abs +=
+    fabs( integrand_value_midpoint_absc*kronrod_weights.back() );
+
+  return unscaled_kronrod_integral_abs;
+}
+
+// Calculate the unscaled kronrod integral asc (used for absolute error calc)
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+IntegralQuantity UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::calculateUnscaledKronrodIntegralAsc(
+               const std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+               const std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+               const IntegrandQuantity& integrand_value_midpoint_absc,
+               const std::vector<FloatType>& kronrod_weights,
+               const IntegrandQuantity& unscaled_kronrod_integral ) const
+{
+  // Make sure the integrand values and kronrod weights are valid
+  testPrecondition( integrand_values_neg_absc.size() ==
+                    integrand_values_pos_absc.size() );
+  testPrecondition( integrand_values_neg_absc.size() + 1 ==
+                    kronrod_weights.size() );
+
+  // Calculate the mean kronrod integral
+  IntegrandQuantity mean_unscaled_kronrod_integral =
+    unscaled_kronrod_integral/2;
+    
+  // Estimate the integral asc for all but the last weight
+  IntegrandQuantity unscaled_kronrod_integral_asc = IntegrandQT::zero();
+
+  unsigned number_of_weights = integrand_values_neg_absc.size()+1;
+  
+  for( int j = 0; j < number_of_weights - 1; j++ )
+  {  
+    unscaled_kronrod_integral_asc += kronrod_weights[j]*
+      (fabs( integrand_values_neg_absc[j] - mean_unscaled_kronrod_integral ) +
+       fabs( integrand_values_pos_absc[j] - mean_unscaled_kronrod_integral ));
+  };
+
+  // Estimate the integral asc for the last weight
+  unscaled_kronrod_integral_asc += kronrod_weights.back()*
+    fabs( integrand_value_midpoint_absc - mean_unscaled_kronrod_integral );
+
+  return unscaled_kronrod_integral_asc;
+}
+ 
+
+// Calculate the unscaled gauss integral using the evaluated integrand values
+// Note: The Gauss quadrature set use every other Kronrod abscissa - there
+// is no need to re-evaluate the Functor
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+IntegralQuantity UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::calculateUnscaledGaussIntegral(
+               const std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+               const std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+               const IntegrandQuantity& integrand_value_midpoint_absc,
+               const std::vector<FloatType>& gauss_weights ) const
+{
+  // Make sure the integrand values and gauss weights are valid
+  testPrecondition( integrand_values_neg_absc.size() ==
+                    integrand_values_pos_absc.size() );
+  testPrecondition( (integrand_values_neg_absc.size()+1)/2 ==
+                    gauss_weights.size() );
+  
+  IntegrandQuantity unscaled_gauss_integral = IntegrandQT::zero();
+
+  unsigned number_of_kronrod_weights = integrand_values_neg_absc.size()+1;
+
+  unsigned number_of_gauss_weights = number_of_kronrod_weights/2;
+
+  // Estimate integral using all but last (midpoint) abscissa
+  for( int j = 0; j < number_of_gauss_weights-1; j++ )
+  {
+    // Every other Kronrod abscissa is also a Gauss abscissa
+    int kronrod_j = j*2 + 1;
+
+    unscaled_gauss_integral += gauss_weights[j]*
+      (integrand_values_neg_absc[kronrod_j] +
+       integrand_values_pos_absc[kronrod_j]);
+  };
+
+  // Update Gauss estimate with last weight if needed (even # of abscissae)
+  if( number_of_kronrod_weights % 2 == 0 )
+  {
+    unscaled_gauss_integral += integrand_value_midpoint_absc*
+      gauss_weights.back();
+  }
+
+  return unscaled_gauss_integral;
+}
+
+// Rescale absolute error from integration
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::rescaleAbsoluteError( 
+                                            IntegralQuantity& absolute_error, 
+                                            IntegralQuantity integral_abs, 
+                                            IntegralQuantity integral_asc ) const
+{
+  if( integral_asc != IntegralQT::zero() &&
+      absolute_error != IntegralQT::zero() )
+  {
+    FloatType scale = static_cast<FloatType>(200)*absolute_error/integral_asc;
+
+    if( scale < static_cast<FloatType>(1) )
+      absolute_error = integral_asc*pow( scale, 3/(FloatType)2 );
+    else
+      absolute_error = integral_asc; 
+  }
+
+  IntegralQuantity cutoff = IntegralQT::min()/ 
+    (static_cast<FloatType>(50)*std::numeric_limits<FloatType>::epsilon())
+  
+  if( integral_abs > cutoff )
+  {
+    IntegralQuantity min_error = integral_abs*
+      static_cast<FloatType>(50)*std::numeric_limits<FloatType>::epsilon();
+      
+    if( min_error > absolute_error ) 
+      absolute_error = min_error;  
+  }
 };
 
 // Sort the bin order from highest to lowest error 
 //! \details The error list will be correctly sorted except bin_1 and bin_2
 template<typename T>
 void UnitAwareGaussKronrodIntegrator<T>::sortBins( 
-        Teuchos::Array<int>& bin_order,
+        std::vector<int>& bin_order,
         BinArray& bin_array, 
         const ExtrapolatedQuadratureBin<T>& bin_1,
         const ExtrapolatedQuadratureBin<T>& bin_2,
@@ -364,13 +527,13 @@ void UnitAwareGaussKronrodIntegrator<T>::sortBins(
    *  in descending order. This number depends on the number of
    *  subdivisions still allowed.
    */
-  Teuchos::Array<int>::iterator max_bin;
+  std::vector<int>::iterator max_bin;
   if ( (d_subinterval_limit/2+2) < bin_order.size()-1 )
     max_bin = bin_order.begin() + ( d_subinterval_limit - bin_order.size() );
   else
     max_bin = bin_order.end();
 
-  Teuchos::Array<int>::iterator large_bin = bin_order.begin()+start_bin;
+  std::vector<int>::iterator large_bin = bin_order.begin()+start_bin;
   while ( large_bin != max_bin &&
           larger_error < bin_array[*large_bin].getAbsoluteError() )
   {
@@ -381,7 +544,7 @@ void UnitAwareGaussKronrodIntegrator<T>::sortBins(
   max_bin;
 
   //  Insert smaller_bin_error by traversing the list bottom-up.
-  Teuchos::Array<int>::iterator small_bin = max_bin;
+  std::vector<int>::iterator small_bin = max_bin;
   while ( small_bin != large_bin && 
           bin_array[bin_order[*small_bin]].getAbsoluteError() < smaller_error )
   {
@@ -395,8 +558,8 @@ void UnitAwareGaussKronrodIntegrator<T>::sortBins(
 // get the Wynn Epsilon-Algoirithm extrapolated value
 template<typename T>
 void UnitAwareGaussKronrodIntegrator<T>::getWynnEpsilonAlgorithmExtrapolation( 
-        Teuchos::Array<T>& bin_extrapolated_result, 
-        Teuchos::Array<T>& last_three_results, 
+        std::vector<T>& bin_extrapolated_result, 
+        std::vector<T>& last_three_results, 
         T& extrapolated_result, 
         T& extrapolated_error,  
         int& number_of_extrapolated_intervals,
@@ -789,7 +952,7 @@ template<typename T>
 template<typename Functor>
 void UnitAwareGaussKronrodIntegrator<T>::integrateAdaptivelyWynnEpsilon( 
     Functor& integrand,
-    const Teuchos::ArrayView<T>& points_of_interest,
+    const std::vectorView<T>& points_of_interest,
     T& result,
     T& absolute_error ) const
 {
@@ -803,7 +966,7 @@ void UnitAwareGaussKronrodIntegrator<T>::integrateAdaptivelyWynnEpsilon(
   testPrecondition( points_of_interest.size() > 1 );
 
   BinArray bin_array( d_subinterval_limit );
-  Teuchos::Array<int> bin_order( number_of_intervals );
+  std::vector<int> bin_order( number_of_intervals );
 
   // Initialize the bins of the integral and check for fast convergence
   {
@@ -987,7 +1150,7 @@ void UnitAwareGaussKronrodIntegrator<T>::integrateAdaptivelyWynnEpsilon(
       continue;
     }
 
-    Teuchos::Array<T> last_three_results( 3 );
+    std::vector<T> last_three_results( 3 );
 
     this->getWynnEpsilonAlgorithmExtrapolation( 
                                               bin_extrapolated_result,
@@ -1034,7 +1197,7 @@ void UnitAwareGaussKronrodIntegrator<T>::integrateAdaptivelyWynnEpsilon(
   {
     //  Compute global integral sum.  
     T long_result = (T)0;
-    Teuchos::Array<int>::reverse_iterator j =  bin_order.rbegin();
+    std::vector<int>::reverse_iterator j =  bin_order.rbegin();
     // Sum result over all bins
     for( j; j != bin_order.rend(); j++ )
     {
@@ -1081,9 +1244,9 @@ template<typename T>
 template<int Points, typename Functor>
 bool UnitAwareGaussKronrodIntegrator<T>::initializeBinsWynnEpsilon(
                                Functor& integrand,
-                               const Teuchos::ArrayView<T>& points_of_interest,
+                               const std::vectorView<T>& points_of_interest,
                                BinArray& bin_array,
-                               Teuchos::Array<unsigned>& bin_order,
+                               std::vector<unsigned>& bin_order,
                                T& result,
                                T& absolute_error ) const
 {
@@ -1095,7 +1258,7 @@ bool UnitAwareGaussKronrodIntegrator<T>::initializeBinsWynnEpsilon(
   bin_order.resize( number_of_intervals );
 
   // Keep track of which bins need their errors rescaled
-  Teuchos::Array<bool> rescale_bin_error( number_of_intervals );
+  std::vector<bool> rescale_bin_error( number_of_intervals );
 
   // Initialize the absolute error
   absolute_error = (T)0;
@@ -1202,24 +1365,6 @@ inline bool GaussKronrodIntegrator<T>::subintervalTooSmall(
   else
     return false;
 };
-
-// Calculate the quadrature upper and lower integrand values at an abscissa
-template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
-template<typename Functor>
-void UnitAwareGaussKronrodIntegrator<T>::calculateQuadratureIntegrandValuesAtAbscissa( 
-                               Functor& integrand, 
-                               ArgQuantity abscissa,
-                               ArgQuantity half_length,
-                               ArgQuantity midpoint,
-                               IntegrandQuantity& integrand_value_lower,
-                               IntegrandQuantity& integrand_value_upper ) const
-{
-  ArgQuantity weighted_abscissa = getRawQuantity(half_length)*abscissa;
-
-  integrand_value_lower = integrand( midpoint - weighted_abscissa );
-  integrand_value_upper = integrand( midpoint + weighted_abscissa );
-}; 
-
 
 // Bisect and integrate the given bin interval
 template<typename T>

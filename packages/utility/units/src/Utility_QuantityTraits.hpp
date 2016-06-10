@@ -39,16 +39,16 @@ private:
 
 public:
   static inline QuantityType epsilon()
-  { return QuantityType::from_value( std::numeric_limits<RayType>::epsilon() ); }
+  { return QuantityType::from_value( QuantityTraits<RawType>::epsilon() ); }
   
   static inline QuantityType inf()
-  { return QuantityType::from_value( std::numeric_limits<RawType>::infinity() ); }
+  { return QuantityType::from_value( QuantityTraits<RawType>::inf() ); }
 
   static inline QuantityType nan()
-  { return QuantityType::from_value( std::numeric_limits<RawType>::quiet_NaN() ); }
+  { return QuantityType::from_value( QuantityTraits<RawType>::nan() ); }
 
   static inline bool isnaninf( const QuantityType& a )
-  { return Teuchos::ScalarTraits<RawType>::isnaninf( a.value() ); }
+  { return QuantityTraits<RawType>::isnaninf( a.value() ); }
 };
 
 /*! \brief The partial specialization of QuantityTraits for arithmetic 
@@ -74,6 +74,12 @@ struct QuantityTraits<boost::units::quantity<Unit,T>, typename boost::enable_if<
 
   static inline QuantityType one()
   { return QuantityType::from_value( RawType(1) ); }
+
+  static inline QuantityType min()
+  { return QuantityType::from_value( QuantityTraits<RawType>::min() ); }
+
+  static inline QuantityType max()
+  { return QuantityType::from_value( QuantityTraits<RawType>::max() ); }
 
   //! Possible bug in boost::units::sqrt
   static inline typename GetQuantityToPowerType<1,2>::type sqrt( const QuantityType& quantity )
@@ -201,6 +207,12 @@ struct QuantityTraits<T,typename boost::enable_if<boost::is_arithmetic<T> >::typ
 
   static inline QuantityType one()
   { return RawType(1); }
+
+  static inline QuantityType min()
+  { return std::numeric_limits<RawType>::min(); }
+
+  static inline QuantityType max()
+  { return std::numeric_limits<RawType>::max(); }
 
   static inline QuantityType sqrt( const QuantityType quantity )
   { return std::sqrt( quantity ); }

@@ -30,25 +30,19 @@ namespace Utility{
   /*! Gauss-Kronrod quadrature set traits 
    * \ingroup gauss_kronrod_quad_traits
    */
-  template<int Points, typename Unit = void, typename FloatType = double>
+  template<int Points, typename FloatType = double>
   struct GaussKronrodQuadratureSetTraits
   {
-    //! The abscissae quantity
-    typedef typename UnitTraits<Unit>::template GetQuantityType<FloatType>::type AbscissaQuantity;
-
-    //! The weight quantity (integrand q*weight q == integral q)
-    typedef AbscissaQuantity WeightQuantity;
-
     //! Get the Gauss quadrature weights 
-    static inline const std::vector<WeightQuantity> getGaussWeights()
+    static inline const std::vector<FloatType> getGaussWeights()
     { (void)UndefinedTraits<int>::notDefined(); return std::vector<FloatType>(); }
     
     //! Get the Kronrod quadrature weights 
-    static inline const std::vector<WeightQuantity> getKronrodWeights()
+    static inline const std::vector<FloatType> getKronrodWeights()
     { (void)UndefinedTraits<int>::notDefined(); return std::vector<FloatType>(); }
-
+    
     //! Get the Kronrod quadrature abscissae
-    static inline const std::vector<AbscissaeQuantity> getKronrodAbscissae()
+    static inline const std::vector<FloatType> getKronrodAbscissae()
     { (void)UndefinedTraits<int>::notDefined(); return std::vector<AbscissaQuantity>(); }
   };
 

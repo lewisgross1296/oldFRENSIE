@@ -11,9 +11,7 @@
 
 // Std Includes
 #include <queue>
-
-// Trilinos Includes
-#include <Teuchos_Array.hpp>
+#include <vector>
 
 // FRENSIE Includes
 #include "Utility_QuadratureBin.hpp"
@@ -77,7 +75,7 @@ public:
   void integrateAdaptively( Functor& integrand,
 			    ArgQuantity lower_limit,
 			    ArgQuantity upper_limit,
-			    IntegralQuantity& result,
+			    IntegralQuantity& integral,
 			    IntegralQuantity& absolute_error ) const;
 
   //! Integrate the function with point rule
@@ -85,16 +83,16 @@ public:
   void integrateWithPointRule( Functor& integrand,
                                ArgQuantity lower_limit,
                                ArgQuantity upper_limit,
-                               IntegralQuantity& result,
+                               IntegralQuantity& integral,
                                IntegralQuantity& absolute_error,
-                               IntegralQuantity& result_abs, 
-                               IntegralQuantity& result_asc ) const;
+                               IntegralQuantity& integral_abs, 
+                               IntegralQuantity& integral_asc ) const;
 
   //! Integrate a function with known integrable singularities adaptively
   template<typename Functor, typename ArrayType>
   void integrateAdaptivelyWynnEpsilon( Functor& integrand,
                                        const ArrayType& points_of_interest,
-                                       IntegralQuantity& result,
+                                       IntegralQuantity& integral,
                                        IntegralQuantity& absolute_error) const;
 
 protected:
@@ -117,6 +115,51 @@ protected:
                                    IntegralQuantity& result,
                                    IntegralQuantity& absolute_error ) const;
 
+  // Evaluate the integrand at the kronrod abscissae
+  template<typename Functor>
+  IntegralQuantity evaluateIntegrandAtKronrodAbscissae(
+                     Functor& integrand,
+                     std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+                     std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+                     IntegrandQuantity& integrand_value_midpoint_absc,
+                     const ArgQuantity scale_factor,
+                     const ArgQuantity shift_factor,
+                     const std::vector<FloatType>& kronrod_abscissae ) const;
+
+  // Calculate the unscaled kronrod integral
+  IntegralQuantity calculateUnscaledKronrodIntegral(
+               const std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+               const std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+               const IntegrandQuantity& integrand_value_midpoint_absc,
+               const std::vector<FloatType>& kronrod_weights ) const;
+
+  // Calculate the unscaled kronrod integral abs (used for absolute error calc)
+  IntegralQuantity calculateUnscaledKronrodIntegralAbs(
+               const std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+               const std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+               const IntegrandQuantity& integrand_value_midpoint_absc,
+               const std::vector<FloatType>& kronrod_weights ) const;
+
+  // Calculate the unscaled kronrod integral asc (used for absolute error calc)
+  IntegralQuantity calculateUnscaledKronrodIntegralAsc(
+               const std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+               const std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+               const IntegrandQuantity& integrand_value_midpoint_absc,
+               const std::vector<FloatType>& kronrod_weights,
+               const IntegrandQuantity& unscaled_kronrod_integral ) const;
+
+  // Calculate the unscaled gauss integral 
+  IntegralQuantity calculateUnscaledGaussIntegral(
+               const std::vector<IntegrandQuantity>& integrand_values_neg_absc,
+               const std::vector<IntegrandQuantity>& integrand_values_pos_absc,
+               const IntegrandQuantity& integrand_value_midpoint_absc,
+               const std::vector<FloatType>& gauss_weights ) const;
+
+  // Rescale absolute error from integration
+  void rescaleAbsoluteError( IntegralQuantity& absolute_error, 
+                             IntegralQuantity integral_abs, 
+                             IntegralQuantity integral_asc ) const;
+
   // Initialize the bins for the adaptive Wynn Epsilon integration
   template<int Points, typename Functor, typename ArrayType>
   bool initializeBinsWynnEpsilon( Functor& integrand,
@@ -124,16 +167,6 @@ protected:
                                   std::vector<unsigned>& bin_order,
                                   IntegralQuantity& result,
                                   IntegralQuantity& absolute_error ) const;
-  
-  // Calculate the quadrature upper and lower integrand values at an abscissa
-  template<typename Functor>
-  void calculateQuadratureIntegrandValuesAtAbscissa( 
-                              Functor& integrand, 
-                              ArgQuantity abscissa,
-                              ArgQuantity half_length,
-                              ArgQuantity midpoint,
-                              IntegrandQuantity& integrand_value_lower,
-                              IntegrandQuantity& integrand_value_upper ) const;
   
   // Bisect and integrate the given bin interval
   template<int Points, typename Functor, typename Bin>
@@ -144,12 +177,6 @@ protected:
     Bin& bin_2,
     IntegralQuantity& bin_1_asc,
     IntegralQuantity& bin_2_asc ) const;
-
-  // Rescale absolute error from integration
-  void rescaleAbsoluteError( 
-    IntegralQuantity& absolute_error, 
-    IntegralQuantity result_abs, 
-    IntegralQuantity result_asc ) const;
 
   // Test if subinterval is too small
   template<int Points>
@@ -183,7 +210,7 @@ protected:
  
   // Sort the bin order from highest to lowest error 
   void sortBins( 
-        Teuchos::Array<int>& bin_order,
+        std::vector<int>& bin_order,
         BinArray& bin_array, 
         const ExtrapolatedQuadratureBinType& bin_1,
         const ExtrapolatedQuadratureBinType& bin_2,
@@ -206,7 +233,7 @@ private:
   typedef std::priority_queue<QuadratureBinType> BinQueue;
 
   // The extrapolated quadrature bin array
-  typedef Teuchos::Array<ExtrapolatedQuadratureBinType> BinArray;
+  typedef std::vector<ExtrapolatedQuadratureBinType> BinArray;
   
   // The relative error tolerance
   FloatType d_relative_error_tol;

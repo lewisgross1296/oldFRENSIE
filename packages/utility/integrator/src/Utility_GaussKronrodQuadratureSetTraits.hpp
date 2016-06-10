@@ -17,199 +17,163 @@ namespace Utility{
   /*! Gauss-Kronrod quadrature set traits 15 point rule
    * \ingroup gauss_kronrod_quad_traits
    */
-  template<typename Unit = void, typename FloatType = double>
-  struct GaussKronrodQuadratureSetTraits<15,Unit,FloatType>
+  template<typename FloatType = double>
+  struct GaussKronrodQuadratureSetTraits<15,FloatType>
   {
-    //! The abscissae quantity
-    typedef typename UnitTraits<Unit>::template GetQuantityType<FloatType>::type AbscissaQuantity;
-
-    //! The weight quantity (integrand q*weight q == integral q)
-    typedef AbscissaQuantity WeightQuantity;
-    
     //! Get the Gauss quadrature weights 
-    static inline const std::vector<WeightQuantity>& getGaussWeights();
+    static inline const std::vector<FloatType>& getGaussWeights();
         
     //! Get the Kronrod quadrature weights 
-    static inline const std::vector<WeightQuantity>& getKronrodWeights();
+    static inline const std::vector<FloatType>& getKronrodWeights();
       
     //! Get the Kronrod quadrature abscissae
-    static inline const std::vector<AbscissaQuantity>& getKronrodAbscissae();
+    static inline const std::vector<FloatType>& getKronrodAbscissae();
         
     private:
 
     // Initialize the gauss weight array
-    static std::vector<WeightQuantity> initializeGaussWeights();
+    static std::vector<FloatType> initializeGaussWeights();
 
     // Initialize the kronrod weight array
-    static std::vector<WeightQuantity> initializeKronrodWeights();
+    static std::vector<FloatType> initializeKronrodWeights();
 
     // Initialize the kronrod abscissae array
-    static std::vector<AbscissaQuantity> initializeKronrodAbscissae();
+    static std::vector<FloatType> initializeKronrodAbscissae();
   };
 
   /*! Gauss-Kronrod quadrature set traits 21 point rule
    * \ingroup gauss_kronrod_quad_traits
    */
-  template<typename Unit = void, typename FloatType = double>
-  struct GaussKronrodQuadratureSetTraits<21,Unit,FloatType>
+  template<typename FloatType = double>
+  struct GaussKronrodQuadratureSetTraits<21,FloatType>
   {
-    //! The abscissa quantity
-    typedef typename UnitTraits<Unit>::template GetQuantityType<FloatType>::type AbscissaQuantity;
-
-    //! The weight quantity (integrand q*weight q == integral q)
-    typedef AbscissaQuantity WeightQuantity;
-    
     //! Get the Gauss quadrature weights 
-    static inline const std::vector<WeightQuantity>& getGaussWeights();
+    static inline const std::vector<FloatType>& getGaussWeights();
         
     //! Get the Kronrod quadrature weights 
-    static inline const std::vector<WeightQuantity>& getKronrodWeights();
+    static inline const std::vector<FloatType>& getKronrodWeights();
 
     //! Get the Kronrod quadrature abscissae
-    static inline const std::vector<AbscissaQuantity>& getKronrodAbscissae();
+    static inline const std::vector<FloatType>& getKronrodAbscissae();
 
     private:
 
     // Initialize the gauss weight array
-    static std::vector<WeightQuantity> initializeGaussWeights();
+    static std::vector<FloatType> initializeGaussWeights();
 
     // Initialize the kronrod weight array
-    static std::vector<WeightQuantity> initializeKronrodWeights();
+    static std::vector<FloatType> initializeKronrodWeights();
 
     // Initialize the kronrod abscissae array
-    static std::vector<AbscissaQuantity> initializeKronrodAbscissae();
+    static std::vector<FloatType> initializeKronrodAbscissae();
   };
 
   /*! Gauss-Kronrod quadrature set traits 31 point rule
    * \ingroup gauss_kronrod_quad_traits
    */
-  template<typename Unit = void, typename FloatType = double>
-  struct GaussKronrodQuadratureSetTraits<31,Unit,FloatType>
+  template<typename FloatType = double>
+  struct GaussKronrodQuadratureSetTraits<31,FloatType>
   {
-    //! The abscissae quantity
-    typedef typename UnitTraits<Unit>::template GetQuantityType<FloatType>::type AbscissaQuantity;
-
-    //! The weight quantity (integrand q*weight q == integral q)
-    typedef AbscissaQuantity WeightQuantity;
-    
     //! Get the Gauss quadrature weights 
-    static inline const std::vector<WeightQuantity>& getGaussWeights();
+    static inline const std::vector<FloatType>& getGaussWeights();
         
     //! Get the Kronrod quadrature weights 
-    static inline const std::vector<WeightQuantity>& getKronrodWeights();
+    static inline const std::vector<FloatType>& getKronrodWeights();
 
     //! Get the Kronrod quadrature abscissae
-    static inline const std::vector<AbscissaQuantity>& getKronrodAbscissae();
+    static inline const std::vector<FloatType>& getKronrodAbscissae();
 
     private:
 
     // Initialize the gauss weight array
-    static std::vector<WeightQuantity> initializeGaussWeights();
+    static std::vector<FloatType> initializeGaussWeights();
 
     // Initialize the kronrod weight array
-    static std::vector<WeightQuantity> initializeKronrodWeights();
+    static std::vector<FloatType> initializeKronrodWeights();
 
     // Initialize the kronrod abscissae array
-    static std::vector<AbscissaQuantity> initializeKronrodAbscissae();
+    static std::vector<FloatType> initializeKronrodAbscissae();
   };
 
   /*! Gauss-Kronrod quadrature set traits 41 point rule
    * \ingroup gauss_kronrod_quad_traits
    */
-  template<typename Unit = void, typename FloatType = double>
-  struct GaussKronrodQuadratureSetTraits<41,Unit,FloatType>
+  template<typename FloatType = double>
+  struct GaussKronrodQuadratureSetTraits<41,FloatType>
   {
-    //! The abscissae quantity
-    typedef typename UnitTraits<Unit>::template GetQuantityType<FloatType>::type AbscissaQuantity;
-
-    //! The weight quantity (integrand q*weight q == integral q)
-    typedef AbscissaQuantity WeightQuantity;
-    
     //! Get the Gauss quadrature weights 
-    static inline const std::vector<WeightQuantity>& getGaussWeights();
+    static inline const std::vector<FloatType>& getGaussWeights();
         
     //! Get the Kronrod quadrature weights 
-    static inline const std::vector<WeightQuantity>& getKronrodWeights();
+    static inline const std::vector<FloatType>& getKronrodWeights();
 
     //! Get the Kronrod quadrature abscissae
-    static inline const std::vector<AbscissaQuantity>& getKronrodAbscissae();
+    static inline const std::vector<FloatType>& getKronrodAbscissae();
     
     private:
 
     // Initialize the gauss weight array
-    static std::vector<WeightQuantity> initializeGaussWeights();
+    static std::vector<FloatType> initializeGaussWeights();
 
     // Initialize the kronrod weight array
-    static std::vector<WeightQuantity> initializeKronrodWeights();
+    static std::vector<FloatType> initializeKronrodWeights();
 
     // Initialize the kronrod abscissae array
-    static std::vector<AbscissaQuantity> initializeKronrodAbscissae();
+    static std::vector<FloatType> initializeKronrodAbscissae();
   };
 
   /*! Gauss-Kronrod quadrature set traits 51 point rule
    * \ingroup gauss_kronrod_quad_traits
    */
-  template<typename Unit = void, typename FloatType = double>
-  struct GaussKronrodQuadratureSetTraits<51,Unit,FloatType>
+  template<typename FloatType = double>
+  struct GaussKronrodQuadratureSetTraits<51,FloatType>
   {
-    //! The abscissae quantity
-    typedef typename UnitTraits<Unit>::template GetQuantityType<FloatType>::type AbscissaQuantity;
-
-    //! The weight quantity (integrand q*weight q == integral q)
-    typedef AbscissaQuantity WeightQuantity;
-    
     //! Get the Gauss quadrature weights 
-    static inline const std::vector<WeightQuantity>& getGaussWeights();
+    static inline const std::vector<FloatType>& getGaussWeights();
         
     //! Get the Kronrod quadrature weights 
-    static inline const std::vector<WeightQuantity>& getKronrodWeights();
+    static inline const std::vector<FloatType>& getKronrodWeights();
 
     //! Get the Kronrod quadrature abscissae
-    static inline const std::vector<AbscissaQuantity>& getKronrodAbscissae();
+    static inline const std::vector<FloatType>& getKronrodAbscissae();
 
     private:
 
     // Initialize the gauss weight array
-    static std::vector<WeightQuantity> initializeGaussWeights();
+    static std::vector<FloatType> initializeGaussWeights();
 
     // Initialize the kronrod weight array
-    static std::vector<WeightQuantity> initializeKronrodWeights();
+    static std::vector<FloatType> initializeKronrodWeights();
 
     // Initialize the kronrod abscissae array
-    static std::vector<AbscissaQuantity> initializeKronrodAbscissae();
+    static std::vector<FloatType> initializeKronrodAbscissae();
   };
 
   /*! Gauss-Kronrod quadrature set traits 61 point rule
    * \ingroup gauss_kronrod_quad_traits
    */
-  template<typename Unit = void, typename FloatType = double>
-  struct GaussKronrodQuadratureSetTraits<61,Unit,FloatType>
+  template<typename FloatType = double>
+  struct GaussKronrodQuadratureSetTraits<61,FloatType>
   {
-    //! The abscissae quantity
-    typedef typename UnitTraits<Unit>::template GetQuantityType<FloatType>::type AbscissaQuantity;
-
-    //! The weight quantity (integrand q*weight q == integral q)
-    typedef AbscissaQuantity WeightQuantity;
-    
     //! Get the Gauss quadrature weights 
-    static inline const std::vector<WeightQuantity>& getGaussWeights();
+    static inline const std::vector<FloatType>& getGaussWeights();
         
     //! Get the Kronrod quadrature weights 
-    static inline const std::vector<WeightQuantity>& getKronrodWeights();
+    static inline const std::vector<FloatType>& getKronrodWeights();
 
     //! Get the Kronrod quadrature abscissae
-    static inline const std::vector<AbscissaQuantity>& getKronrodAbscissae();
+    static inline const std::vector<FloatType>& getKronrodAbscissae();
 
     private:
 
     // Initialize the gauss weight array
-    static std::vector<WeightQuantity> initializeGaussWeights();
+    static std::vector<FloatType> initializeGaussWeights();
 
     // Initialize the kronrod weight array
-    static std::vector<WeightQuantity> initializeKronrodWeights();
+    static std::vector<FloatType> initializeKronrodWeights();
 
     // Initialize the kronrod abscissae array
-    static std::vector<AbscissaQuantity> initializeKronrodAbscissae();
+    static std::vector<FloatType> initializeKronrodAbscissae();
   };
 
 } // end Utility namespace

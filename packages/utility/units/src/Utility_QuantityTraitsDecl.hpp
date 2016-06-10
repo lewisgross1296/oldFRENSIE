@@ -51,23 +51,31 @@ struct QuantityTraits
   struct GetQuantityToPowerType
   { typedef QuantityType type; };
 
-  //! Get the zero quantity
+  //! The zero quantity
   static inline QuantityType zero()
   { return UndefinedQuantityTraits<T>::notDefined(); }
 
-  //! Get the one quantity
+  //! The one quantity
   static inline QuantityType one()
+  { return UndefinedQuantityTraits<T>::notDefined(); }
+
+  //! The min quantity
+  static inline QuantityType min()
+  { return UndefinedQuantityTraits<T>::notDefined(); }
+
+  //! The max quantity
+  static inline QuantityType max()
   { return UndefinedQuantityTraits<T>::notDefined(); }
 
   //! Machine epsilon (least value > 1 that is representable minus 1)
   static inline QuantityType epsilon()
   { return UndefinedQuantityTraits<T>::notDefined(); }
 
-  //! Get the inf quantity (only available for floating point quantities)
+  //! The Inf quantity (only available for floating point quantities)
   static inline QuantityType inf()
   { return UndefinedQuantityTraits<T>::notDefined(); }
 
-  //! Get the nan quantity (only available for floating point quantities)
+  //! The NaN quantity (only available for floating point quantities)
   static inline QuantityType nan()
   { return UndefinedQuantityTraits<T>::notDefined(); }
 
