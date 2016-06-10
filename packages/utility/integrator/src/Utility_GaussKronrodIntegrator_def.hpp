@@ -63,7 +63,7 @@ UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::UnitAwareGauss
  */
 template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
 template<int Points, typename Functor>
-void UnitAwareGaussKronrodIntegrator<T>::integrateWithPointRule(
+inline void UnitAwareGaussKronrodIntegrator<T>::integrateWithPointRule(
                                          Functor& integrand, 
                                          ArgQuantity lower_limit, 
                                          ArgQuantity upper_limit,
@@ -270,6 +270,331 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
                              "Error: The integration failed during the "
                              "subinterval iterations!"
   }
+}
+
+// Integrate a function with integrable singularities adaptively
+/*! \details Functor must have operator()( double ) defined. This function
+ * applies the Gauss-Kronrod 21-point integration rule adaptively until an
+ * estimate of the integral of the integrand over [lower_limit,upper_limit]
+ * is achieved within the desired tolerances. The results are extrapolated 
+ * using the Wynn epsilon-algorithm, which accelerates the convergence of the 
+ * integral in the presence of discontinuities and integrable singularities. 
+ * See QAGS algorithm details in the GNU Scientific Library documentation.
+ */
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+template<typename Functor, typename ArrayType>
+void UnitAwareGaussKronrodIntegrator<T>::integrateAdaptivelyWynnEpsilon( 
+                                       Functor& integrand,
+                                       const ArrayType& points_of_interest,
+                                       IntegralQuantity& integral,
+                                       IntegralQuantity& absolute_error ) const
+{
+  // Make sure that the ArrayType is valid
+  testStaticPrecondition( (boost::is_same<ArrayType::value_type,ArgQuantity>::value) );
+  // Check that the points of interest are in ascending order
+  testPrecondition( Sort::isSortedAscending( points_of_interest.begin(),
+                                             points_of_interest.end(),
+                                             true ) );
+  // Check that the number of points don't exceed the subinterval limit
+  testPrecondition( points_of_interest.size() < d_subinterval_limit );
+  // Check that there are at least two points
+  testPrecondition( points_of_interest.size() >= 2 );
+
+  // The bin array (corresponding to points of interest and subintervals)
+  BinArray bin_array;
+
+  // The total absolute error
+  IntegralQuantity total_absolute_error;
+  
+  // Used for convergence testing
+  int ksgn;
+  
+  // Initialize the bins of the integral and check for fast convergence
+  const bool converged;
+
+  try{
+    converged = this->initializeBinsWynnEpsilon( integrand,
+                                                 points_of_interest,
+                                                 integral,
+                                                 total_absolute_error,
+                                                 ksgn );
+  }
+  EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
+                           "Error: Could not initialize the intervals of "
+                           "the adaptive Wynn Epsilon integration!" );
+  
+  // The integral has already converged - finish
+  if( converged )
+    return;
+  
+  // Check for an insufficient number of iterations
+  else if( d_subinterval_limit == 1 )
+  {
+    THROW_EXCEPTION( Utility::IntegratorException,
+                     "Error: A maximum of one iteration was insufficient for "
+                     "convergence within the tolerance!" );
+  }
+  
+  // Iterate until convergence (or reaching subinterval limit)
+  else
+  {
+    // The number of bins
+    unsigned number_of_bins = points_of_interest.size()-1;
+    
+    // Initialize the bin order array
+    std::vector<int> bin_order( number_of_bins );
+
+    for( unsigned i = 0; i < number_of_bins; ++i )
+      bin_order[i] = i;
+
+    // Initialize the extrapolated bin integral array
+    std::vector<FloatType> bin_extrapolated_integral( 52 );
+
+    // Integral is set during the initialization step
+    bin_extrapolated_integral[0] = integral;
+
+    // Reset the absolute error
+    absolute_error = std::numeric_limits<T>::max();
+    
+    int nr_max = 0;
+    int number_of_extrapolated_calls = 0;
+    int number_of_extrapolated_intervals = 0;
+    int ktmin = 0;
+    bool extrapolate = false;
+    bool no_extrapolation_allowed = false;
+    bool bad_integration_behavior = false;
+    T error_over_large_bins = total_error;
+    T extrapolated_tolerance = tolerance;
+    int max_level = 1;
+    int round_off_1 = 0;
+    int round_off_2 = 0;
+    int round_off_3 = 0;
+    int ierro = 0;
+ 
+    T error_correction = (T)0;
+
+    for( ; number_of_bins < d_subinterval_limit; ++number_of_bins )
+    {
+      T area_12 = (T)0, error_12 = (T)0;
+      T integral_asc_1 = (T)0, integral_asc_2 = (T)0;
+      T smallest_bin_size = (T)0; // 1.5*smallest bin size
+
+      // Get the problem bin (bin with the largest error)
+      // Note: The bins were sorted from highest error to lowest error
+      //       during the initialization step.
+      ExtrapolatedQuadratureBinType problem_bin = bin_array[bin_order[nr_max]];
+
+      ExtrapolatedQuadratureBinType
+        left_half_prolem_bin, right_half_problem_bin;
+
+      // Always use the 21 point rule to integrate the two bin halfs
+      this->bisectAndIntegrateBinInterval<21>( integrand,
+                                               problem_bin,
+                                               left_half_problem_bin,
+                                               right_half_problem_bin );
+    
+      left_half_problem_bin.setLevel( problem_bin.getLevel() + 1 );
+      right_half_problem_bin.setLevel( problem_bin.getLevel() + 1 );
+
+    // Improve previous approximations to integral and error 
+    total_absolute_error += left_half_problem_bin.getAbsoluteError() +
+      right_half_problem_bin.getAbsoluteError() -
+      problem_bin.getAbsoluteError();
+    
+    integral += left_half_problem_bin.getIntegral() +
+      right_half_problem_bin.getIntegral() - problem_bin.getIntegral();
+
+    // Check that the roundoff error is not too high
+    this->checkRoundoffError( bin, 
+                              bin_1, 
+                              bin_2,    
+                              integral_asc_1,
+                              integral_asc_2,
+                              round_off_1,
+                              round_off_2,
+                              round_off_3,
+                              extrapolate,
+                              number_of_bins );
+
+    // Update and sort bin order
+    this->sortBins( bin_order, 
+                    bin_array,
+                    bin_1,
+                    bin_2,
+                    number_of_bins,
+                    nr_max );
+
+    tolerance = 
+      this->getMax( d_absolute_error_tol,
+                    d_relative_error_tol*fabs( total_area ) );
+
+    if ( total_error <= tolerance )
+      break;
+
+    TEST_FOR_EXCEPTION( number_of_bins+1 == d_subinterval_limit, 
+                        Utility::IntegratorException,
+                        "Maximum number of subdivisions reached" );
+
+    TEST_FOR_EXCEPTION( subintervalTooSmall<21>( bin_1.lower_limit, 
+                                                 bin_2.lower_limit, 
+                                                 bin_2.upper_limit ), 
+                        Utility::IntegratorException,
+                        "Maximum number of subdivisions reached" );
+
+    if ( round_off_2 >= 5 )
+    {
+      bad_integration_behavior = true;
+    }
+
+    if( no_extrapolation_allowed )
+      continue; // go to next for loop iteration without extrapolating
+
+    error_over_large_bins -= bin.getAbsoluteError();
+
+    if( bin_1.getLevel() + 1 <= max_level )
+    {
+      error_over_large_bins += error_12;
+    }
+
+    bin = bin_array[bin_order[nr_max]];
+    // Test whether the interval to be bisected next is the smallest interval
+    if( !extrapolate )
+    {
+      if( bin.getLevel() + 1 <= max_level )
+        continue; // go to next for loop iteration without extrapolating
+
+      extrapolate = true;
+      nr_max = 1; 
+    }
+
+    if( bad_integration_behavior != true && 
+        error_over_large_bins > extrapolated_tolerance )
+    {
+      int id = nr_max;
+      int size = number_of_bins;
+
+      if( number_of_bins >  2 + d_subinterval_limit/2 )
+        size = d_subinterval_limit + 3 - number_of_bins;
+
+      bool still_have_large_bins = false;
+      for( int k = id; k < size; k++ )
+      {
+        bin = bin_array[bin_order[nr_max]];
+        if( bin.getLevel() + 1 <= max_level )
+        {
+          still_have_large_bins = true;
+          continue;
+        }   
+        nr_max++;    
+      }
+    
+      if( still_have_large_bins )
+        continue;
+    }
+
+    // Perform extrapolation
+    T extrapolated_integral = (T)0;
+    T extrapolated_error = (T)0;
+
+    number_of_extrapolated_intervals++;
+    bin_extrapolated_integral[number_of_extrapolated_intervals] = total_area;
+
+    if( number_of_extrapolated_intervals < 2 )
+    {
+      nr_max = 0;
+      extrapolate = false;
+      max_level++;
+      error_over_large_bins = total_error;
+      continue;
+    }
+
+    std::vector<T> last_three_integrals( 3 );
+
+    this->getWynnEpsilonAlgorithmExtrapolation( 
+                                              bin_extrapolated_integral,
+                                              last_three_integrals,
+                                              extrapolated_integral, 
+                                              extrapolated_error,  
+                                              number_of_extrapolated_intervals,
+                                              number_of_extrapolated_calls );
+
+    ktmin++;
+
+    TEST_FOR_EXCEPTION( ktmin > 5 &&
+                        absolute_error < (1/(T)1000)*total_error, 
+                        Utility::IntegratorException,
+                        "Error: The integral is probably divergent "
+                        "(or slowly convergent)!" );
+
+    if( extrapolated_error < absolute_error )
+    {
+      ktmin = 0;
+      absolute_error = extrapolated_error;
+      integral = extrapolated_integral;
+      error_correction = error_over_large_bins;
+      extrapolated_tolerance = 
+        this->getMax( d_absolute_error_tol, 
+                      d_relative_error_tol*fabs( extrapolated_integral ) ); 
+
+      if( absolute_error <= extrapolated_tolerance )
+        break;
+    }
+
+    // Prepare bisection of the smallest interval.
+    if( number_of_extrapolated_intervals == 0 )
+      no_extrapolation_allowed = true;
+
+    nr_max = 0;
+    extrapolate = false;
+    max_level++;
+    error_over_large_bins = total_error;
+  } // end main for loop
+
+  //  Set final integral and error estimate.
+  if( absolute_error == std::numeric_limits<T>::max() )
+  {
+    //  Compute global integral sum.  
+    T long_integral = (T)0;
+    std::vector<int>::reverse_iterator j =  bin_order.rbegin();
+    // Sum integral over all bins
+    for( j; j != bin_order.rend(); j++ )
+    {
+      bin = bin_array[*j];
+      long_integral += bin.integral;
+    }
+    integral = long_integral;
+    absolute_error = total_error;
+
+    return;
+  }
+
+  if( bad_integration_behavior ) 
+  {
+    absolute_error += error_correction;
+
+    TEST_FOR_EXCEPTION( bad_integration_behavior, 
+                        Utility::IntegratorException,
+                        "Error: Extremely bad integrand behavior occurs at "
+                        "some points of the integration interval!" );
+
+  }
+
+  // Test on divergence.
+  if( ksgn == (-1) && this->getMax( fabs(integral), fabs(total_area) ) <=
+      (total_area_abs/(T)100) )
+  {
+    return;
+  }
+
+  TEST_FOR_EXCEPTION( (1/(T)100) > integral/total_area ||
+                      integral/total_area > (T)100 ||
+                      total_error > fabs( total_area ), 
+                      Utility::IntegratorException,
+                      "Error: The input is invalid! Because the absolute "
+                      "error tol < 0 and the relative error tol < 0, the "
+                      "integral and absolute_error are set to zero." );
+
+  return;
 }
 
 // Evaluate the integrand at the kronrod abscissae
@@ -598,7 +923,7 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
                        "before convergence!" );
     }
 
-    // Check if the roundoff error is too high (store test results in counters)
+    // Check if the roundoff error is too high (store test integrals in counters)
     try{
       this->checkRoundoffError( problem_bin, 
                                 left_half_problem_bin, 
@@ -736,6 +1061,107 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::checkRoun
                       ")!" );
 };
 
+// Conduct the first iteration of the adapative integration
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+  template<int Points, typename Functor, typename ArrayType>
+bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::initializeBinsWynnEpsilon(
+                                 Functor& integrand,
+                                 const ArrayType& points_of_interest,
+                                 BinArray& bin_array,
+                                 IntegralQuantity& integral,
+                                 IntegralQuantity& total_absolute_error,
+                                 int& ksgn ) const
+{
+  // Initialize the bin array
+  bin_array.resize( d_subinterval_limit );
+
+  // Initialize the bin order array
+  unsigned number_of_bins = points_of_interest.size() - 1;
+  
+  // Keep track of which bins need their errors rescaled
+  std::vector<bool> rescale_bin_error( number_of_bins );
+
+  // Initialize the integral
+  integral = IntegralQT::zero();
+
+  // Initialize the integral abs
+  IntegralQuantity integral_abs = IntegralQT::zero();
+  
+  // Initialize the absolute error
+  IntegralQuantity absolute_error = IntegralQT::zero();
+
+  // Compute the integral between the points of interest
+  for( int i = 0; i < number_of_bins; i++ )
+  {
+    bin_array[i] = QuadratureBinType( points_of_interest[i],
+                                      points_of_interest[i+1] );
+
+    this->integrateWithPointRule<21>( integrand, bin_array[i] );
+
+    bin_array[i].setLevel( 0 );
+
+    // Update the integral, integral abs, and absolute error values
+    integral += bin_array[i].getIntegral();
+    integral_abs += integral_abs;
+    absolute_error += bin_array[i].getAbsoluteError();
+
+    // Check if the bin error needs to be rescaled
+    if( bin_array[i].getAbsoluteError() == bin_array[i].getIntegralAsc() &&
+        bin_array[i].getAbsoluteError() != IntegralQT::zero() )
+      rescale_bin_error[i] = true;
+    else
+      rescale_bin_error[i] = false;
+  }
+
+  // Calculate the convergence parameters
+  IntegralQuantity tolerance = std::max( d_absolute_error_tol,
+                                         d_relative_error_tol*fabs(integral) );
+
+  IntegralQuanttity round_off =
+    100*std::numeric_limits<FloatType>::epsilon()*integral_abs;
+
+  // Check for convergence
+  if( absolute_error <= tolerance )
+    return true;
+
+  // Check for bad behavior
+  else if( absolute_error <= round_off && absolute_error > tolerance )
+  {
+    THROW_EXCEPTION( Utility::IntegratorException,
+                     "Error: Cannot reach tolerance because of roundoff "
+                     "error during the first iteration!" );
+  }
+  
+  // Normal behavior - not converged yet
+  else
+  {
+    // Initialize the total absolute error
+    total_absolute_error = IntegralQT::zero();
+  
+    // Rescale the error approximations for integrals between the points of
+    // interest
+    for( int i = 0; i < number_of_bins; i++ )
+    {
+      if( rescale_bin_error[i] ) 
+        bin_array[i].setAbsoluteError( absolute_error );
+
+      total_absolute_error += bin_array[i].getAbsoluteError();
+    }
+    
+    // Sort bins from greatest to lowest error (don't include the bins that
+    // have not been initialized yet)
+    std::sort( bin_array.rend()-number_of_bins, bin_array.rend() );
+
+    // Set the ksgn value (used for convergence testing)
+    if( fabs( integral ) >= IntegralQT::one()- 50*round_off )
+      ksgn = 1;
+    else
+      ksgn = -1;
+      
+    return false;
+  }
+}
+
 // Sort the bin order from highest to lowest error 
 //! \details The error list will be correctly sorted except bin_1 and bin_2
 template<typename T>
@@ -744,10 +1170,10 @@ void UnitAwareGaussKronrodIntegrator<T>::sortBins(
         BinArray& bin_array, 
         const ExtrapolatedQuadratureBin<T>& bin_1,
         const ExtrapolatedQuadratureBin<T>& bin_2,
-        const int& number_of_intervals,
+        const int& number_of_bins,
         int& nr_max ) const
 {
-  testPrecondition( bin_order.size() == number_of_intervals );
+  testPrecondition( bin_order.size() == number_of_bins );
 
   T larger_error;
   T smaller_error;
@@ -758,7 +1184,7 @@ void UnitAwareGaussKronrodIntegrator<T>::sortBins(
   if ( bin_1.getAbsoluteError() <= bin_2.getAbsoluteError() )
   {
     bin_array[bin_with_larger_error] = bin_2;
-    bin_array[number_of_intervals] = bin_1;
+    bin_array[number_of_bins] = bin_1;
 
     larger_error = bin_2.getAbsoluteError();
     smaller_error = bin_1.getAbsoluteError();
@@ -766,7 +1192,7 @@ void UnitAwareGaussKronrodIntegrator<T>::sortBins(
   else
   {
     bin_array[bin_with_larger_error] = bin_1;
-    bin_array[number_of_intervals] = bin_2;
+    bin_array[number_of_bins] = bin_2;
 
     larger_error = bin_1.getAbsoluteError();
     smaller_error = bin_2.getAbsoluteError();
@@ -827,46 +1253,46 @@ void UnitAwareGaussKronrodIntegrator<T>::sortBins(
     --small_bin;
   }
   
-  bin_order.insert( small_bin+1, number_of_intervals );
+  bin_order.insert( small_bin+1, number_of_bins );
 };
 
 
 // get the Wynn Epsilon-Algoirithm extrapolated value
 template<typename T>
 void UnitAwareGaussKronrodIntegrator<T>::getWynnEpsilonAlgorithmExtrapolation( 
-        std::vector<T>& bin_extrapolated_result, 
-        std::vector<T>& last_three_results, 
-        T& extrapolated_result, 
+        std::vector<T>& bin_extrapolated_integral, 
+        std::vector<T>& last_three_integrals, 
+        T& extrapolated_integral, 
         T& extrapolated_error,  
         int& number_of_extrapolated_intervals,
         int& number_of_extrapolated_calls  ) const
 {
   testPrecondition( number_of_extrapolated_calls >= 0 );
   testPrecondition( number_of_extrapolated_intervals > 1 );
-  testPrecondition( last_three_results.size() == 3 );
-  testPrecondition( bin_extrapolated_result.size() == 52 );
+  testPrecondition( last_three_integrals.size() == 3 );
+  testPrecondition( bin_extrapolated_integral.size() == 52 );
  
   // update the number of extrapolated calls
   number_of_extrapolated_calls++;
 
   extrapolated_error = std::numeric_limits<T>::max();
-  extrapolated_result = bin_extrapolated_result[number_of_extrapolated_intervals];
+  extrapolated_integral = bin_extrapolated_integral[number_of_extrapolated_intervals];
 
   if ( number_of_extrapolated_intervals < 2 )
   {
     extrapolated_error = getMax( extrapolated_error, 
-        std::numeric_limits<T>::epsilon()*fabs(extrapolated_result)/(T)2 );
+        std::numeric_limits<T>::epsilon()*fabs(extrapolated_integral)/(T)2 );
     return;
   }
 
   int extrapolated_interval_limit = 50;
 
-  bin_extrapolated_result[number_of_extrapolated_intervals+2] = 
-    bin_extrapolated_result[number_of_extrapolated_intervals];
+  bin_extrapolated_integral[number_of_extrapolated_intervals+2] = 
+    bin_extrapolated_integral[number_of_extrapolated_intervals];
 
   int new_element = number_of_extrapolated_intervals/2;
 
-  bin_extrapolated_result[number_of_extrapolated_intervals] = 
+  bin_extrapolated_integral[number_of_extrapolated_intervals] = 
      std::numeric_limits<T>::max();
 
   int original_number = number_of_extrapolated_intervals;
@@ -877,10 +1303,10 @@ void UnitAwareGaussKronrodIntegrator<T>::getWynnEpsilonAlgorithmExtrapolation(
     int k2 = k1-1;
     int k3 = k1-2;
 
-    T result = bin_extrapolated_result[k1+2];
-    T e0 = bin_extrapolated_result[k3];
-    T e1 = bin_extrapolated_result[k2];
-    T e2 = result;
+    T integral = bin_extrapolated_integral[k1+2];
+    T e0 = bin_extrapolated_integral[k3];
+    T e1 = bin_extrapolated_integral[k2];
+    T e2 = integral;
 
     // Get error and tolerance estimate between e2 and e1
     T delta2 = e2 - e1;
@@ -897,15 +1323,15 @@ void UnitAwareGaussKronrodIntegrator<T>::getWynnEpsilonAlgorithmExtrapolation(
     // If e0, e1 and e2 are equal to within machine accuracy, convergence is assumed.
     if ( error2 <= tolerance2 && error3 <= tolerance3 )
     {
-      extrapolated_result = result;
+      extrapolated_integral = integral;
       extrapolated_error = error2+error3;
       extrapolated_error = getMax( extrapolated_error, 
           (std::numeric_limits<T>::epsilon()*fabs(extrapolated_error))/(T)2 );
      return;
     }
 
-    T e3 = bin_extrapolated_result[k1];
-    bin_extrapolated_result[k1] = e1;
+    T e3 = bin_extrapolated_integral[k1];
+    bin_extrapolated_integral[k1] = e1;
 
     // Get error and tolerance estimate between e1 and e3
     T delta1 = e1 - e3;
@@ -934,18 +1360,18 @@ void UnitAwareGaussKronrodIntegrator<T>::getWynnEpsilonAlgorithmExtrapolation(
     }
 
     /* Compute a new element and eventually adjust the value of
-     * result. 
+     * integral. 
      */
-    result = e1 + 1/ss;
-    bin_extrapolated_result[k1] = result;
+    integral = e1 + 1/ss;
+    bin_extrapolated_integral[k1] = integral;
     k1 -= 2;
 
-    T error = error2 + fabs(result - e2) + error3;
+    T error = error2 + fabs(integral - e2) + error3;
 
     if ( error <= extrapolated_error )
     {
       extrapolated_error = error;
-      extrapolated_result = result;
+      extrapolated_integral = integral;
     }
   }
 
@@ -969,7 +1395,7 @@ void UnitAwareGaussKronrodIntegrator<T>::getWynnEpsilonAlgorithmExtrapolation(
 
   for ( int i = 0; i < ie; i++ )
   {
-    bin_extrapolated_result[ib] = bin_extrapolated_result[ib+2];
+    bin_extrapolated_integral[ib] = bin_extrapolated_integral[ib+2];
     ib += 2;
   }
 
@@ -977,31 +1403,31 @@ void UnitAwareGaussKronrodIntegrator<T>::getWynnEpsilonAlgorithmExtrapolation(
   {
     for ( int i = 0; i < number_of_extrapolated_intervals; i++ )
     {
-      bin_extrapolated_result[i]= 
-        bin_extrapolated_result[original_number - number_of_extrapolated_intervals + i];
+      bin_extrapolated_integral[i]= 
+        bin_extrapolated_integral[original_number - number_of_extrapolated_intervals + i];
     }
   }
   
   if ( number_of_extrapolated_calls < 4 )
   {
-    last_three_results[number_of_extrapolated_calls-1] = extrapolated_result;
+    last_three_integrals[number_of_extrapolated_calls-1] = extrapolated_integral;
     extrapolated_error = std::numeric_limits<T>::max();
   }
   else
   {
     extrapolated_error = 
-      fabs( extrapolated_result - last_three_results[2] ) +
-      fabs( extrapolated_result - last_three_results[1] ) +
-      fabs( extrapolated_result - last_three_results[0] );
+      fabs( extrapolated_integral - last_three_integrals[2] ) +
+      fabs( extrapolated_integral - last_three_integrals[1] ) +
+      fabs( extrapolated_integral - last_three_integrals[0] );
 
-    last_three_results[0] = last_three_results[1];
-    last_three_results[1] = last_three_results[2];
-    last_three_results[2] = extrapolated_result;
+    last_three_integrals[0] = last_three_integrals[1];
+    last_three_integrals[1] = last_three_integrals[2];
+    last_three_integrals[2] = extrapolated_integral;
   }
 
   extrapolated_error = std::max ( 
     extrapolated_error,
-    (std::numeric_limits<T>::epsilon()*fabs( extrapolated_result ))/(T)2 );
+    (std::numeric_limits<T>::epsilon()*fabs( extrapolated_integral ))/(T)2 );
 
   return;
 };  
@@ -1023,9 +1449,9 @@ void UnitAwareGaussKronrodIntegrator<T>::checkRoundoffError(
   if( bin_1_asc != bin_1.getAbsoluteError() &&
       bin_2_asc != bin_2.getAbsoluteError() )
     {
-       T area_12 = bin_1.getResult() + bin_2.getResult();
+       T area_12 = bin_1.getIntegral() + bin_2.getIntegral();
        T error_12 = bin_1.getAbsoluteError() + bin_2.getAbsoluteError();
-       T delta = bin.getResult() - area_12;
+       T delta = bin.getIntegral() - area_12;
 
        if( fabs (delta) <= (1/(T)100000) * fabs (area_12) && 
            error_12 >= (99/(T)100) * bin.getAbsoluteError() )
@@ -1049,414 +1475,6 @@ void UnitAwareGaussKronrodIntegrator<T>::checkRoundoffError(
                         "Extremely bad integrand behavior occurs at some points "
                         "of the integration interval" );
 };
-
-// Integrate a function with integrable singularities adaptively
-/*! \details Functor must have operator()( double ) defined. This function
- * applies the Gauss-Kronrod 21-point integration rule adaptively until an
- * estimate of the integral of the integrand over [lower_limit,upper_limit]
- * is achieved within the desired tolerances. The results are extrapolated 
- * using the Wynn epsilon-algorithm, which accelerates the convergence of the 
- * integral in the presence of discontinuities and integrable singularities. 
- * See QAGS algorithm details in the GNU Scientific Library documentation.
- */
-template<typename T>
-template<typename Functor>
-void UnitAwareGaussKronrodIntegrator<T>::integrateAdaptivelyWynnEpsilon( 
-    Functor& integrand,
-    const std::vectorView<T>& points_of_interest,
-    T& result,
-    T& absolute_error ) const
-{
-  // Check that the points of interest are in ascending order
-  testPrecondition( Sort::isSortedAscending( points_of_interest.begin(),
-                                             points_of_interest.end(),
-                                             true ) );
-  // Check that the number of points don't exceed the subinterval limit
-  testPrecondition( points_of_interest.size() < d_subinterval_limit );
-  // Check that there are at least two points
-  testPrecondition( points_of_interest.size() > 1 );
-
-  BinArray bin_array( d_subinterval_limit );
-  std::vector<int> bin_order( number_of_intervals );
-
-  // Initialize the bins of the integral and check for fast convergence
-  {
-    const bool converged;
-
-    try{
-      converged = this->initializeBinsWynnEpsilon( integrand,
-                                                   points_of_interest,
-                                                   bin_order,
-                                                   result,
-                                                   absolute_error );
-    }
-    EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
-                             "Error: Could not initialize the intervals of "
-                             "the adaptive Wynn Epsilon integration!" );
-
-    // The integral has already converged - finish
-    if( converged )
-      return;
-  }
-
-  // initialize
-  bin_extrapolated_result[0] = total_area;
-  absolute_error = std::numeric_limits<T>::max();
-  int nr_max = 0;
-  int number_of_extrapolated_calls = 0;
-  int number_of_extrapolated_intervals = 0;
-  int ktmin = 0;
-  bool extrapolate = false;
-  bool no_extrapolation_allowed = false;
-  bool bad_integration_behavior = false;
-  T error_over_large_bins = total_error;
-  T extrapolated_tolerance = tolerance;
-  int max_level = 1;
-  int round_off_1 = 0;
-  int round_off_2 = 0;
-  int round_off_3 = 0;
-  int ierro = 0;
- 
-  T error_correction = (T)0;
-
-  int ksgn;
-  if ( fabs_total_area >= (T)1 - ((T)50*round_off) )
-  {
-    ksgn = 1;
-  }
-  else
-  {
-    ksgn = -1;
-  }
-
-  //number_of_intervals++;
-  for ( number_of_intervals; number_of_intervals < d_subinterval_limit; number_of_intervals++ )
-  {
-    T area_12 = (T)0, error_12 = (T)0;
-    T result_asc_1 = (T)0, result_asc_2 = (T)0;
-    T smallest_bin_size = (T)0; // 1.5*smallest bin size 
-
-    ExtrapolatedQuadratureBin<T> bin_1, bin_2;
-
-    // Set bin to interval with largest error
-    bin = bin_array[bin_order[nr_max]];
-
-    this->bisectAndIntegrateBinInterval<21>( integrand, 
-                                             bin,
-                                             bin_1,
-                                             bin_2,
-                                             result_asc_1,
-                                             result_asc_2 );
-    
-    bin_1.setLevel( bin.getLevel() + 1 );
-    bin_2.setLevel( bin.getLevel() + 1 );
-
-    // Improve previous approximations to integral and error and test for
-    // accuracy
-    total_error += bin_1.getAbsoluteError() + bin_2.getAbsoluteError() -
-      bin.getAbsoluteError();
-    total_area += bin_1.getResult() + bin_2.getResult() - bin.getResult();
-
-    // Check that the roundoff error is not too high
-    this->checkRoundoffError( bin, 
-                              bin_1, 
-                              bin_2,    
-                              result_asc_1,
-                              result_asc_2,
-                              round_off_1,
-                              round_off_2,
-                              round_off_3,
-                              extrapolate,
-                              number_of_intervals );
-
-    // Update and sort bin order
-    this->sortBins( bin_order, 
-                    bin_array,
-                    bin_1,
-                    bin_2,
-                    number_of_intervals,
-                    nr_max );
-
-    tolerance = 
-      this->getMax( d_absolute_error_tol,
-                    d_relative_error_tol*fabs( total_area ) );
-
-    if ( total_error <= tolerance )
-      break;
-
-    TEST_FOR_EXCEPTION( number_of_intervals+1 == d_subinterval_limit, 
-                        Utility::IntegratorException,
-                        "Maximum number of subdivisions reached" );
-
-    TEST_FOR_EXCEPTION( subintervalTooSmall<21>( bin_1.lower_limit, 
-                                                 bin_2.lower_limit, 
-                                                 bin_2.upper_limit ), 
-                        Utility::IntegratorException,
-                        "Maximum number of subdivisions reached" );
-
-    if ( round_off_2 >= 5 )
-    {
-      bad_integration_behavior = true;
-    }
-
-    if( no_extrapolation_allowed )
-      continue; // go to next for loop iteration without extrapolating
-
-    error_over_large_bins -= bin.getAbsoluteError();
-
-    if( bin_1.getLevel() + 1 <= max_level )
-    {
-      error_over_large_bins += error_12;
-    }
-
-    bin = bin_array[bin_order[nr_max]];
-    // Test whether the interval to be bisected next is the smallest interval
-    if( !extrapolate )
-    {
-      if( bin.getLevel() + 1 <= max_level )
-        continue; // go to next for loop iteration without extrapolating
-
-      extrapolate = true;
-      nr_max = 1; 
-    }
-
-    if( bad_integration_behavior != true && 
-        error_over_large_bins > extrapolated_tolerance )
-    {
-      int id = nr_max;
-      int size = number_of_intervals;
-
-      if( number_of_intervals >  2 + d_subinterval_limit/2 )
-        size = d_subinterval_limit + 3 - number_of_intervals;
-
-      bool still_have_large_bins = false;
-      for( int k = id; k < size; k++ )
-      {
-        bin = bin_array[bin_order[nr_max]];
-        if( bin.getLevel() + 1 <= max_level )
-        {
-          still_have_large_bins = true;
-          continue;
-        }   
-        nr_max++;    
-      }
-    
-      if( still_have_large_bins )
-        continue;
-    }
-
-    // Perform extrapolation
-    T extrapolated_result = (T)0;
-    T extrapolated_error = (T)0;
-
-    number_of_extrapolated_intervals++;
-    bin_extrapolated_result[number_of_extrapolated_intervals] = total_area;
-
-    if( number_of_extrapolated_intervals < 2 )
-    {
-      nr_max = 0;
-      extrapolate = false;
-      max_level++;
-      error_over_large_bins = total_error;
-      continue;
-    }
-
-    std::vector<T> last_three_results( 3 );
-
-    this->getWynnEpsilonAlgorithmExtrapolation( 
-                                              bin_extrapolated_result,
-                                              last_three_results,
-                                              extrapolated_result, 
-                                              extrapolated_error,  
-                                              number_of_extrapolated_intervals,
-                                              number_of_extrapolated_calls );
-
-    ktmin++;
-
-    TEST_FOR_EXCEPTION( ktmin > 5 &&
-                        absolute_error < (1/(T)1000)*total_error, 
-                        Utility::IntegratorException,
-                        "Error: The integral is probably divergent "
-                        "(or slowly convergent)!" );
-
-    if( extrapolated_error < absolute_error )
-    {
-      ktmin = 0;
-      absolute_error = extrapolated_error;
-      result = extrapolated_result;
-      error_correction = error_over_large_bins;
-      extrapolated_tolerance = 
-        this->getMax( d_absolute_error_tol, 
-                      d_relative_error_tol*fabs( extrapolated_result ) ); 
-
-      if( absolute_error <= extrapolated_tolerance )
-        break;
-    }
-
-    // Prepare bisection of the smallest interval.
-    if( number_of_extrapolated_intervals == 0 )
-      no_extrapolation_allowed = true;
-
-    nr_max = 0;
-    extrapolate = false;
-    max_level++;
-    error_over_large_bins = total_error;
-  } // end main for loop
-
-  //  Set final result and error estimate.
-  if( absolute_error == std::numeric_limits<T>::max() )
-  {
-    //  Compute global integral sum.  
-    T long_result = (T)0;
-    std::vector<int>::reverse_iterator j =  bin_order.rbegin();
-    // Sum result over all bins
-    for( j; j != bin_order.rend(); j++ )
-    {
-      bin = bin_array[*j];
-      long_result += bin.result;
-    }
-    result = long_result;
-    absolute_error = total_error;
-
-    return;
-  }
-
-  if( bad_integration_behavior ) 
-  {
-    absolute_error += error_correction;
-
-    TEST_FOR_EXCEPTION( bad_integration_behavior, 
-                        Utility::IntegratorException,
-                        "Error: Extremely bad integrand behavior occurs at "
-                        "some points of the integration interval!" );
-
-  }
-
-  // Test on divergence.
-  if( ksgn == (-1) && this->getMax( fabs(result), fabs(total_area) ) <=
-      (total_area_abs/(T)100) )
-  {
-    return;
-  }
-
-  TEST_FOR_EXCEPTION( (1/(T)100) > result/total_area ||
-                      result/total_area > (T)100 ||
-                      total_error > fabs( total_area ), 
-                      Utility::IntegratorException,
-                      "Error: The input is invalid! Because the absolute "
-                      "error tol < 0 and the relative error tol < 0, the "
-                      "result and absolute_error are set to zero." );
-
-  return;
-}
-
-// Conduct the first iteration of the adapative integration
-template<typename T>
-template<int Points, typename Functor>
-bool UnitAwareGaussKronrodIntegrator<T>::initializeBinsWynnEpsilon(
-                               Functor& integrand,
-                               const std::vectorView<T>& points_of_interest,
-                               BinArray& bin_array,
-                               std::vector<unsigned>& bin_order,
-                               T& result,
-                               T& absolute_error ) const
-{
-  // Initialize the bin array
-  bin_array.resize( d_subinterval_limit );
-
-  // Initialize the bin order array
-  int number_of_intervals = points_of_interest.size() - 1;
-  bin_order.resize( number_of_intervals );
-
-  // Keep track of which bins need their errors rescaled
-  std::vector<bool> rescale_bin_error( number_of_intervals );
-
-  // Initialize the absolute error
-  absolute_error = (T)0;
-  
-  T total_area = (T)0, total_area_abs = (T)0;
-  T total_error = (T)0;
-
-  // Compute the integration between the points of interest
-  for( int i = 0; i < number_of_intervals; i++ )
-  {
-    bin_array[i].setLowerLimit( points_of_interest[i] );
-    bin_array[i].setUpperLimit( points_of_interest[i+1] );
-
-    T local_result, local_absolute_error;
-    T result_abs = (T)0;
-    T result_asc = (T)0;
-
-    this->integrateWithPointRule<21>( integrand, 
-                                      bin_array[i].getLowerLimit()
-                                      bin_array[i].getUpperLimit(), 
-                                      local_result, 
-                                      local_absolute_error,
-                                      result_abs, 
-                                      result_asc );
-
-    bin_array[i].setResultAndAbsoluteError( local_result,
-                                            local_absolute_error );
-    bin_array[i].setLevel( 0 );
-    
-    total_area += bin_array[i].getResult();
-    absolute_error += bin_array[i].getAbsoluteError();
-    total_area_abs += result_abs;
-
-    // Check if the bin error needs to be rescaled
-    if( bin_array[i].getAbsoluteError() == result_asc &&
-        bin_array[i].getAbsoluteError() != (T)0 )
-      rescale_bin_error[i] = true;
-    else
-      rescale_bin_error[i] = false;
-  }
-  
-  // Compute error approximations for integrals between the points of interest
-  for( int i = 0; i < number_of_intervals; i++ )
-  {
-    if( rescale_bin_error[i] ) 
-      bin_array[i].setAbsoluteError( absolute_error );
-
-    total_error += bin_array[i].getAbsoluteError();
-
-    bin_order[i] = i;
-  }
-
-  // Sort bins from greatest to lowest error
-  std::sort( bin_array.rend()-number_of_intervals, bin_array.rend() );
-
-  // Calculate the convergence parameters
-  T tolerance = this->getMax( d_absolute_error_tol,
-                              d_relative_error_tol*fabs( total_area ) );
-
-  T round_off = std::numeric_limits<T>::epsilon()*total_area_abs;
-
-  // Check for convergence
-  if( absolute_error <= tolerance )
-  {
-    result = total_area;
-    
-    return true;
-  }
-  // Check for an insufficient number of iterations
-  else if( d_subinterval_limit == 1 )
-  {
-    THROW_EXCEPTION( Utility::IntegratorException,
-                     "Error: A maximum of one iteration was insufficient for "
-                     "convergence within the tolerance!" );
-  }
-  // Check for bad behavior
-  else if( absolute_error <= (T)100*round_off &&
-           absolute_error > tolerance )
-  {
-    THROW_EXCEPTION( Utility::IntegratorException,
-                     "Error: Cannot reach tolerance because of roundoff error"
-                     " on the first attempt!" );
-  }
-  // Normal behavior - not converged yet
-  else
-    return false;
-}
 
 } // end Utility namespace
 

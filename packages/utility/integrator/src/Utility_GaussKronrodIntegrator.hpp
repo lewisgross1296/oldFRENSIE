@@ -192,9 +192,10 @@ protected:
   template<int Points, typename Functor, typename ArrayType>
   bool initializeBinsWynnEpsilon( Functor& integrand,
                                   const ArrayType& points_of_interest,
-                                  std::vector<unsigned>& bin_order,
-                                  IntegralQuantity& result,
-                                  IntegralQuantity& absolute_error ) const;
+                                  BinArray& bin_array,
+                                  IntegralQuantity& integral,
+                                  IntegralQuantity& absolute_error,
+                                  int& ksgn ) const;
 
   // Check the roundoff error 
   void checkRoundoffError( 
