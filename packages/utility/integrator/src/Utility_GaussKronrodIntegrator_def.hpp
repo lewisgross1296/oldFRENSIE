@@ -11,6 +11,7 @@
 
 // Std Includes
 #include <limits>
+#include <algorithm>
 
 // FRENSIE Includes
 #include "Utility_ContractException.hpp"
@@ -57,68 +58,32 @@ UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::UnitAwareGauss
   }
 }
 
-// Integrate the function adaptively with BinQueue
-/*! \details Functor must have operator()( double ) defined. This function
- * applies the specified integration rule (Points) adaptively until an 
- * estimate of the integral of the integrand over [lower_limit,upper_limit] is
- * achieved within the desired tolerances. Valid Gauss-Kronrod rules are
- * 15, 21, 31, 41, 51 and 61. Higher-order rules give better accuracy for
- * smooth functions, while lower-order rules save time when the function
- * contains local difficulties, such as discontinuities. On each iteration
- * the adaptive integration strategy bisects the interval with the largest
- * error estimate. See the qag function details in the quadpack documentation.
+// Integrate the function with given Gauss-Kronrod point rule
+/*! \details See the overloaded method for more details.
  */
 template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
 template<int Points, typename Functor>
-void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrateAdaptively(
-                                       Functor& integrand, 
-                                       ArgQuantity lower_limit, 
-                                       ArgQuantity upper_limit,
-                                       IntegralQuantity& integral,
-				       IntegralQuantity& absolute_error ) const
+void UnitAwareGaussKronrodIntegrator<T>::integrateWithPointRule(
+                                         Functor& integrand, 
+                                         ArgQuantity lower_limit, 
+                                         ArgQuantity upper_limit,
+                                         IntegralQuantity& integral,
+                                         IntegralQuantity& absolute_error,
+                                         IntegralQuantity& integral_abs, 
+                                         IntegralQuantity& integral_asc ) const
 {
   // Make sure the integration limits are valid
   testPrecondition( lower_limit <= upper_limit );
-  
-  // Create the bin that encompasses the entire integration range
-  QuadratureBinType bin( lower_limit, upper_limit );
-  
-  bool converged;
 
-  try{
-    converged = this->integrateAdaptivelyInitialIteration( integrand, bin );
-  }
-  EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
-                           "Error: The initial iteration of the adaptive "
-                           "integration failed!" );
-  
-  // Check for fast convergence
-  if( converged )
-  {
-    integral = bin.getResult();
-    absolute_error = bin.getAbsoluteError();
-    
-    return;
-  }
-  // Check if the subinterval limit is insufficient for convergence
-  else if( d_subinterval_limit == 1 )
-  {
-    THROW_EXCEPTION( Utility::IntegratorException,
-                     "Error: a maximum of one iteration was insufficient!" );
-  }
-  // Iterate until convergence (or reaching subinterval limit)
-  else
-  {
-    try{
-      this->integrateAdaptivelyIterate( integrand,
-                                        bin,
-                                        integral,
-                                        absolute_error );
-    }
-    EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
-                             "Error: The integration failed during the "
-                             "subinterval iterations."
-  }
+  // Create the quadrature bin for the limits of interest
+  QuadratureBinType bin( lower_limit, upper_limit );
+
+  this->integrateWithPointRule<Points>( integrand, bin );
+
+  integral = bin.getIntegral();
+  absolute_error = bin.getAbsoluteError();
+  integral_abs = bin.getIntegralAbs();
+  integral_asc = bin.getIntegralAsc();
 }
 
 // Integrate the function with given Gauss-Kronrod point rule
@@ -135,24 +100,14 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
 template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
 template<int Points, typename Functor>
 void UnitAwareGaussKronrodIntegrator<T>::integrateWithPointRule(
-                                         Functor& integrand, 
-                                         ArgQuantity lower_limit, 
-                                         ArgQuantity upper_limit,
-                                         IntegralQuantity& integral,
-                                         IntegralQuantity& absolute_error,
-                                         IntegralQuantity& integral_abs, 
-                                         IntegralQuantity& integral_asc ) const
+                                                 Functor& integrand, 
+                                                 QuadratureBinType& bin ) const
 {
   // Make sure the integration limits are valid
-  testPrecondition( lower_limit <= upper_limit );
+  testPrecondition( bin.getLowerLimit() <= bin.getUpperLimit() );
   
-  if( lower_limit < upper_limit )
+  if( bin.getLowerLimit() < bin.getUpperLimit() )
   {
-    // The Kronrod integral, integral abs, integral asc
-    integral = IntegralQT::zero();
-    integral_abs = IntegralQT::zero();
-    integral_asc = IntegralQT::zero();
-
     // The Gauss integral
     IntegralQuantity gauss_integral = IntegralQT::zero();
 
@@ -212,28 +167,108 @@ void UnitAwareGaussKronrodIntegrator<T>::integrateWithPointRule(
                                               GKQST::getGaussWeights() );
 
       // Scale the integrals
-      integral = unscaled_kronrod_integral*scale_factor;
-      integral_abs = unscaled_kronrod_integral_abs*fabs( scale_factor );
-      integral_asc = unscaled_kronrod_integral_asc*fabs( scale_factor );
+      bin.setIntegral( unscaled_kronrod_integral*scale_factor );
+      bin.setIntegralAbs( unscaled_kronrod_integral_abs*fabs( scale_factor ) );
+      bin.setIntegralAsc( unscaled_kronrod_integral_asc*fabs( scale_factor ) );
       
       gauss_integral = unscaled_gauss_integral*scale_factor;
     }
 
     // Estimate error in integral 
-    absolute_error = fabs( integral - gauss_integral );
+    bin.setAbsoluteError( fabs( bin.getIntegral() - gauss_integral ) );
     
-    this->rescaleAbsoluteError( absolute_error, integral_abs, integral_asc );
+    this->rescaleAbsoluteError( bin.getAbsoluteError(),
+                                bin.getIntegralAbs(),
+                                bin.getIntegralAsc() );
   }
   else if( lower_limit == upper_limit )
   {
-    integral = IntegralQT::zero();
-    absolute_error = IntegralQT::zero();
+    bin.setIntegral( IntegralQT::zero() );
+    bin.setIntegralAbs( IntegralQT::zero() );
+    bin.setIntegralAsc( IntegralQT::zero() );
+    bin.setAbsoluteError( IntegralQT::zero() );
   }
   else // Invalid limits
   {
     THROW_EXCEPTION( Utility::IntegratorException,
 		     "Error: Invalid integration limits ( "
                      << lower_limit << " !< " << upper_limit << ")." );
+  }
+}
+
+// Integrate the function adaptively
+/*! \details See overloaded method for more details.
+ */
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+template<int Points, typename Functor>
+inline void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrateAdaptively(
+                                       Functor& integrand, 
+                                       ArgQuantity lower_limit, 
+                                       ArgQuantity upper_limit,
+                                       IntegralQuantity& integral,
+				       IntegralQuantity& absolute_error ) const
+{
+  // Make sure the integration limits are valid
+  testPrecondition( lower_limit <= upper_limit );
+  
+  // Create the quadrature bin for the limits of interest
+  QuadratureBinType bin( lower_limit, upper_limit );
+
+  this->integrateAdaptively<Points>( integrand, bin );
+
+  integral = bin.getIntegral();
+  absolute_error = bin.getAbsoluteError();
+}
+
+// Integrate the function adaptively 
+/*! \details Functor must have operator()( double ) defined. This function
+ * applies the specified integration rule (Points) adaptively until an 
+ * estimate of the integral of the integrand over [lower_limit,upper_limit] is
+ * achieved within the desired tolerances. Valid Gauss-Kronrod rules are
+ * 15, 21, 31, 41, 51 and 61. Higher-order rules give better accuracy for
+ * smooth functions, while lower-order rules save time when the function
+ * contains local difficulties, such as discontinuities. On each iteration
+ * the adaptive integration strategy bisects the interval with the largest
+ * error estimate. See the qag function details in the quadpack documentation.
+ */
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+template<int Points, typename Functor>
+void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrateAdaptively(
+                                                 Functor& integrand, 
+                                                 QuadratureBinType& bin ) const
+{
+  // Make sure the integration limits are valid
+  testPrecondition( bin.getLowerLimit() <= bin.getUpperLimit() );
+  
+  bool converged;
+
+  try{
+    converged = this->integrateAdaptivelyInitialIteration( integrand, bin );
+  }
+  EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
+                           "Error: The initial iteration of the adaptive "
+                           "integration failed!" );
+  
+  // Check for fast convergence
+  if( converged )
+    return;
+
+  // Check if the subinterval limit is insufficient for convergence
+  else if( d_subinterval_limit == 1 )
+  {
+    THROW_EXCEPTION( Utility::IntegratorException,
+                     "Error: a maximum of one iteration was insufficient!" );
+  }
+  
+  // Iterate until convergence (or reaching subinterval limit)
+  else
+  {
+    try{
+      this->integrateAdaptivelyIterate( integrand, bin );
+    }
+    EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
+                             "Error: The integration failed during the "
+                             "subinterval iterations!"
   }
 }
 
@@ -432,9 +467,9 @@ IntegralQuantity UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit
 // Rescale absolute error from integration
 template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
 void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::rescaleAbsoluteError( 
-                                            IntegralQuantity& absolute_error, 
-                                            IntegralQuantity integral_abs, 
-                                            IntegralQuantity integral_asc ) const
+                                   IntegralQuantity& absolute_error, 
+                                   const IntegralQuantity& integral_abs, 
+                                   const IntegralQuantity& integral_asc ) const
 {
   if( integral_asc != IntegralQT::zero() &&
       absolute_error != IntegralQT::zero() )
@@ -458,6 +493,247 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::rescaleAb
     if( min_error > absolute_error ) 
       absolute_error = min_error;  
   }
+}
+
+// Conduct the first iteration of the adapative integration
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+template<int Points, typename Functor>
+bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrateAdaptivelyInitialIteration(
+						 Functor& integrand, 
+						 QuadratureBinType& bin ) const
+{
+  // Perform an integration using the requested point rule over the interval
+  // of interest (specified by the bin)
+  this->integrateWithPointRule<Points>( integrand, bin );
+
+  // Compute the convergence tolerance
+  IntegralQuantity tolerance =
+    std::max( d_absolute_error_tol,
+              d_relative_error_tol*fabs(bin.getIntegral()) );
+
+  // Need IEEE rounding here to match original quadpack behavior
+  IntegralQuantity round_off_limit =
+    50*std::numeric_limits<FloatType>::epsilon()*bin.getIntegralAbs();
+
+  // Test if the desired tolerance can be reached
+  TEST_FOR_EXCEPTION( bin.getAbsoluteError() <= round_off_limit &&
+                      bin.getAbsoluteError() > tolerance, 
+                      Utility::IntegratorException,
+                      "Error: Cannot reach tolerance because of roundoff "
+                      "error during first iteration!" );
+
+  // The integral has converged
+  bool converged;
+  
+  if( (bin.getAbsoluteError() <= tolerance &&
+       bin.getAbsoluteError() != bin.getIntegralAsc()) || 
+      bin.getAbsoluteError() == IntegralQT::zero() ) 
+    converged = true;
+  
+  // The integral has not converged - more iterations will be required
+  else
+    converged = false;
+
+  // Reset the integral abs and integral asc (they will no longer be needed)
+  bin.setIntegralAbs( IntegralQT::zero() );
+  bin.setIntegralAsc( IntegralQT::zero() );
+}
+
+// Conduct the other iterations of the adaptive integration
+// Note: The integral and absolute error will be stored in the initial
+// quadrature bin.
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+template<int Points, typename Functor>
+void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrateAdaptivelyIterate(
+                                         Functor& integrand,
+                                         QuadratureBinType& initial_bin ) const
+{
+  // Create a copy of the initial bin to add to the priority queue (the
+  // initial bin will be used to store the updated integral and absolute
+  // error, so it should not be placed in the priority queue).
+  BinQueue bin_queue;
+  
+  {
+    QuadratureBinType initial_bin_copy( initial_bin );
+  
+    // Initialize the bin priority queue with the initial bin
+    bin_queue.push( initial_bin_copy );
+  }
+
+  // These test counters will be used to determine if the desired tolerance
+  // can be acheived
+  unsigned round_off_failed_test_counter_a = 0u;
+  unsigned round_off_failed_test_counter_b = 0u;
+
+  // Integrate problematic subintervals until convergence is reached or
+  // the subinterval limit is reached (the initial subinterval has been done)
+  for( int subinterval = 1; subinterval < d_subinterval_limit; subinterval++ )
+  {
+    // The bin with the highest error (used for the current subinterval)
+    QuadratureBinType problem_bin = bin_queue.top();
+    bin_queue.pop();
+
+    // The left and right subinterval bin for the current problem bin
+    QuadratureBinType left_half_problem_bin, right_half_problem_bin;
+
+    // Bisect the problem bin and calculate the left and right subinterval
+    // bin integrals
+    try{
+      this->bisectAndIntegrateBinInterval<Points>( integrand, 
+                                                   problem_bin,
+                                                   left_half_problem_bin,
+                                                   right_half_problem_bin );
+    }
+    EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
+                             "Error: Could not bisect and integrate the "
+                             "subinterval (" << problem_bin.getLowerLimit() <<
+                             "," << problem_bin.getUpperLimit() << ")!" );
+
+    // Check if the subinterval has gotten too small
+    if( this->subintervalTooSmall<Points>( left_half_problem_bin,
+                                           right_half_problem_bin ) )
+    {
+      THROW_EXCEPTION( Utility::IntegratorException,
+                       "Error: The minimum subinterval size was reached "
+                       "before convergence!" );
+    }
+
+    // Check if the roundoff error is too high (store test results in counters)
+    try{
+      this->checkRoundoffError( problem_bin, 
+                                left_half_problem_bin, 
+                                right_half_problem_bin,    
+                                round_off_failed_test_counter_a,
+                                round_off_failed_test_counter_b,
+                                subinterval+1 );
+    }
+    EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
+                             "Error: Convergence could not be achieved due to "
+                             "roundoff error!" );
+
+    // Improve previous approximations to integral
+    initial_bin.getIntegral() += left_half_problem_bin.getIntegral() +
+      right_half_problem_bin.getIntegral() - problem_bin.getIntegral();
+
+    // Improve previous approximations to error
+    initial_bin.getAbsoluteError() += left_half_problem_bin.getAbsoluteError()+
+      right_half_problem_bin.getAbsoluteError() -
+      problem_bin.getAbsoluteError();
+    
+    // Get the error tolerance
+    tolerance =
+      std::max( d_absolute_error_tol,
+                d_relative_error_tol*fabs(initial_bin.getIntegral()) );
+
+    // Check if integral has converged
+    if( absolute_error <= tolerance )
+      break;
+    
+    // Subinterval limit has been reached
+    else if( subinterval+1 == d_subinterval_limit )
+    {
+      THROW_EXCEPTION( Utility::IntegratorException,
+                       "Error: Maximum number of subdivisions reached before "
+                       "convergence!" );
+    }
+    
+    // Continue to next subinterval
+    else
+    {
+      // Add the new subinterval bins to the priority queue
+      bin_queue.push( left_half_problem_bin );
+      bin_queue.push( right_half_problem_bin );
+    }
+  }
+}
+
+// Bisect and integrate the given bin interval
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+template<int Points, typename Functor>
+void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::bisectAndIntegrateBinInterval( 
+                                     Functor& integrand, 
+                                     const QuadratureBinType& full_bin,
+                                     QuadratureBinType& left_half_bin,
+                                     QuadratureBinType& right_half_bin ) const
+{
+  // Bisect the full bin 
+  ArgQuantity midpoint =
+    (full_bin.getLowerLimit() + full_bin.getUpperLimit())/2;
+
+  // Set the left half bin
+  left_half_bin = QuadratureBinType( full_bin.getLowerLimit(), midpoint );
+  
+  // Set the right half bin
+  right_half_bin = QuadratureBinType( midpoint, full_bin.getUpperLimit() );
+
+  // Integrate over the left half bin
+  this->integrateWithPointRule<Points>( integrand, left_half_bin );
+
+  // Integrate over the right half bin
+  this->integrateWithPointRule<Points>( integrand, right_half_bin );
+};
+
+// Test if subinterval is too small
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+template<int Points>
+inline bool GaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::subintervalTooSmall( 
+                                     const QuadratureBinType& left_bin,
+                                     const QuadratureBinType& right_bin ) const
+{
+  // Calculate the epsilon value used for testing valid bin sizes
+  unsigned c = Points/10;
+  ArgQuantity epsilon = static_cast<FloatType>(1000*c)*ArgQT::epsilon();
+
+  // Get max and min values for testing valid bin sizes
+  ArgQuantity max = getMax( fabs( left_bin.getLowerLimit() ),
+                            fabs( right_bin.getUpperLimit() ) );
+  ArgQuantity min = static_cast<FloatType>(10000)*ArgQT::min();
+
+  if ( max <= (ArgQT::one()+epsilon)*(fabs( right_bin.getLowerLimit() )+min) )
+    return true;
+  else
+    return false;
+};
+
+// Check the roundoff error
+template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
+void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::checkRoundoffError( 
+                                       const QuadratureBinType& full_bin, 
+                                       const QuadratureBinType& left_half_bin, 
+                                       const QuadratureBinType& right_half_bin,
+                                       int& round_off_failed_test_counter_a,
+                                       int& round_off_failed_test_counter_b,
+                                       const int number_of_iterations ) const
+{
+  if( left_half_bin.getIntegralAsc() != left_half_bin.getAbsoluteError() &&
+      right_half_bin.getIntegralAsc() != right_half_bin.getAbsoluteError() )
+  {
+    IntegralQuantity refined_integral = left_half_bin.getIntegral() +
+      right_half_bin.getIntegral();
+    
+    IntegralQuantity refined_error = left_half_bin.getAbsoluteError() +
+      right_half_bin.getAbsoluteError();
+
+    IntegralQuantity integral_delta =
+      fabs(full_bin.getIntegral() - refined_integral);
+
+    // Check for a diverging or slowly converging integral and error
+    if( integral_delta <= fabs(refined_integral)/100000 && 
+        refined_error >= 99*full_bin.getAbsoluteError()/100 )
+      ++round_off_failed_test_counter_a;
+       
+    // Check for a diverging error estimate
+    if( number_of_iterations >= 10 && error_12 > bin.error )
+      ++round_off_failed_test_counter_b;
+  }
+
+  // Check if the counters have reached error limits
+  TEST_FOR_EXCEPTION( round_off_failed_test_counter_a >= 6 ||
+                      round_off_failed_test_counter_b >= 20, 
+                      Utility::IntegratorException,
+                      "Error: Roundoff error prevented tolerance from being "
+                      "achieved (iteration " << number_of_iterations <<
+                      ")!" );
 };
 
 // Sort the bin order from highest to lowest error 
@@ -730,42 +1006,6 @@ void UnitAwareGaussKronrodIntegrator<T>::getWynnEpsilonAlgorithmExtrapolation(
   return;
 };  
 
-
-// check the roundoff error
-template<typename T>
-void UnitAwareGaussKronrodIntegrator<T>::checkRoundoffError( 
-                       const QuadratureBin<T>& bin, 
-                       const QuadratureBin<T>& bin_1, 
-                       const QuadratureBin<T>& bin_2,    
-                       const T& bin_1_asc,
-                       const T& bin_2_asc,
-                       int& round_off_1,
-                       int& round_off_2,
-                       const int number_of_iterations ) const
-{
-    if (bin_1_asc != bin_1.error && bin_2_asc != bin_2.error)
-    {
-       T area_12 = bin_1.result + bin_2.result;
-       T error_12 = bin_1.error + bin_2.error;
-       T delta = bin.result - area_12;
-
-       if ( fabs (delta) <= (1/(T)100000) * fabs (area_12) && 
-            error_12 >= (99/(T)100) * bin.error )
-       {
-         round_off_1++;
-       }
-       if ( number_of_iterations >= 10 && error_12 > bin.error )
-       {
-          round_off_2++;
-       }
-     }
-
-    TEST_FOR_EXCEPTION( round_off_1 >= 6 || round_off_2 >= 20, 
-                        Utility::IntegratorException,
-                        "Roundoff error prevented tolerance from being achieved" );
-};
-
-
 // check the roundoff error
 template<typename T>
 void UnitAwareGaussKronrodIntegrator<T>::checkRoundoffError( 
@@ -809,135 +1049,6 @@ void UnitAwareGaussKronrodIntegrator<T>::checkRoundoffError(
                         "Extremely bad integrand behavior occurs at some points "
                         "of the integration interval" );
 };
-
-template<typename T>
-template<int Points, typename Functor>
-bool UnitAwareGaussKronrodIntegrator<T>::integrateAdaptivelyInitialIteration(
-						 Functor& integrand, 
-						 QuadratureBin<T>& bin ) const
-{
-  // Perform an integration using the requested point rule over the interval
-  // of interest (specified by the bin)
-  T result = (T)0;
-  T absolute_error = (T)0;
-  T result_abs = (T)0;
-  T result_asc = (T)0;
-
-  integrateWithPointRule<Points>(
-    integrand, 
-    bin.getLowerLimit()
-    bin.getUpperLimit(), 
-    result,
-    absolute_error,
-    result_abs, 
-    result_asc );
-
-  bin.setResultAndAbsoluteError( result, absolute_error );
-
-  // Test on accuracy
-  T tolerance = getMax( d_absolute_error_tol,
-                        d_relative_error_tol*fabs( bin.result ) );
-
-  // Need IEEE rounding here to match original quadpack behavior
-  T volatile_round_off;
-  volatile_round_off = (T)50*std::numeric_limits<T>::epsilon()*result_abs;
-  T round_off = volatile_round_off;
-
-  TEST_FOR_EXCEPTION( bin.getAbsoluteError() <= round_off &&
-                      bin.getAbsoluteError() > tolerance, 
-                      Utility::IntegratorException,
-                      "cannot reach tolerance because of roundoff error "
-                      "on first attempt" );
-
-  // The integral has converged
-  if( (bin.getAbsoluteError() <= tolerance &&
-       bin.getAbsoluteError() != result_asc) || 
-      bin.getAbsoluteError() == (T)0 ) 
-    return true;
-  // The integral has not converged - more iterations will be required
-  else
-    return false;
-}
-
-// Conduct the other iterations of the adaptive integration
-template<int Points, typename Functor>
-void UnitAwareGaussKronrodIntegrator<T>::integrateAdaptivelyIterate(
-                                                 Functor& integrand,
-                                                 QuadratureBin<T>& initial_bin,
-                                                 T& result,
-                                                 T& absolute_error ) const
-{
-  BinQueue bin_queue;
-  bin_queue.push( initial_bin );
-
-  result = initial_bin.getResult();
-  absolute_error = initial_bin.getAbsoluteError();
-  int round_off_left = (T)0;
-  int round_off_right = (T)0;
-  
-  for( int last = 1; last < d_subinterval_limit; last++ )
-  {
-    T result_asc_left = (T)0, result_asc_right = (T)0;
-    QuadratureBin<T> problem_bin;
-    QuadratureBin<T> left_half_problem_bin, right_half_problem_bin;
-
-    // Pop bin with highest error from queue
-    problem_bin = bin_queue.top();
-    bin_queue.pop();
-
-    this->bisectAndIntegrateBinInterval<Points>( 
-      integrand, 
-      problem_bin,
-      left_half_problem_bin,
-      right_half_problem_bin,
-      result_asc_left,
-      result_asc_right );
-    
-    TEST_FOR_EXCEPTION( this->subintervalTooSmall<Points>(
-                                      left_half_problem_bin.getLowerLimit()
-                                      right_half_problem_bin.getLowerLimit(),
-                                      right_half_problem_bin.getUpperLimit() ),
-                        Utility::IntegratorException,
-                        "Error: Maximum number of subdivisions reached before "
-                        "convergence!" );
-
-    bin_queue.push( left_half_problem_bin );
-    bin_queue.push( right_half_problem_bin );
-
-    // Improve previous approximations to integral and error and test for
-    // accuracy
-    absolute_error += left_half_problem_bin.getAbsoluteError() +
-      right_half_problem_bin.getAbsoluteError() -
-      problem_bin.getAbsoluteError();
-    
-    result += left_half_problem_bin.getResult() +
-      right_half_problem_bin.getResult() - problem_bin.getResult();
-
-    // Check that the roundoff error is not too high
-    this->checkRoundoffError( bin, 
-                              left_half_problem_bin, 
-                              right_half_problem_bin,    
-                              result_asc_left,
-                              result_asc_right,
-                              round_off_left,
-                              round_off_right,
-                              last+1 );
-
-    tolerance = 
-      this->getMax( d_absolute_error_tol,
-                    d_relative_error_tol*fabs( result ) );
-
-    if( absolute_error <= tolerance )
-      break;
-
-    if( last+1 == d_subinterval_limit )
-    {
-      THROW_EXCEPTION( Utility::IntegratorException,
-                       "Error: Maximum number of subdivisions reached before "
-                       "convergence!" );
-    }
-  }
-}
 
 // Integrate a function with integrable singularities adaptively
 /*! \details Functor must have operator()( double ) defined. This function
@@ -1346,68 +1457,6 @@ bool UnitAwareGaussKronrodIntegrator<T>::initializeBinsWynnEpsilon(
   else
     return false;
 }
-
-// Test if subinterval is too small
-template<typename T>
-template<int Points>
-inline bool GaussKronrodIntegrator<T>::subintervalTooSmall( 
-        T& lower_limit_1, 
-        T& lower_limit_2, 
-        T& upper_limit_2 ) const
-{
-  int c = Points/10;
-  T max = getMax( fabs ( lower_limit_1 ), fabs ( upper_limit_2 ) );
-  T epsilon = (T)1000*c*std::numeric_limits<T>::epsilon();
-  T min = (T)10000*std::numeric_limits<T>::min();
-
-  if ( max <= ( (T)1 + epsilon ) * ( fabs( lower_limit_2 ) + min ) )
-    return true;
-  else
-    return false;
-};
-
-// Bisect and integrate the given bin interval
-template<typename T>
-template<int Points, typename Functor, typename Bin>
-void UnitAwareGaussKronrodIntegrator<T>::bisectAndIntegrateBinInterval( 
-    Functor& integrand, 
-    const Bin& bin,
-    Bin& bin_1,
-    Bin& bin_2,
-    T& bin_1_asc,
-    T& bin_2_asc ) const
-{
-    // Bisect the bin with the largest error estimate into bin 1 and bin 2 
-
-    // Set bin_1
-    bin_1.lower_limit = bin.lower_limit;
-    bin_1.upper_limit = (1/(T)2)  * ( bin.lower_limit + bin.upper_limit );
-
-    // Set bin 2
-    bin_2.lower_limit = bin_1.upper_limit;
-    bin_2.upper_limit = bin.upper_limit;
-
-    T bin_1_abs, bin_2_abs;
-    // Integrate over bin 1
-    integrateWithPointRule<Points>(
-      integrand, 
-      bin_1.lower_limit, 
-      bin_1.upper_limit, 
-      bin_1.result, 
-      bin_1.error, 
-      bin_1_abs, 
-      bin_1_asc );
-
-    // Integrate over bin 2
-    integrateWithPointRule<Points>(
-      integrand, 
-      bin_2.lower_limit, 
-      bin_2.upper_limit, 
-      bin_2.result, 
-      bin_2.error, 
-      bin_2_abs, 
-      bin_2_asc );
-};
 
 } // end Utility namespace
 

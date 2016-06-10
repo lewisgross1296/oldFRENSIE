@@ -33,8 +33,11 @@ public:
   QuadratureBin();
 
   //! Constructor
-  QuadratureBin( const IndepQuantity lower_limit,
-                 const IndepQuantity upper_limit );
+  QuadratureBin( const IndepQuantity& lower_limit,
+                 const IndepQuantity& upper_limit );
+
+  //! Copy constructor
+  QuadratureBin( const QuadratureBin& other_bin );
 
   //! Assignment operator
   QuadratureBin& operator=( const QuadratureBin& other_bin );
@@ -47,26 +50,52 @@ public:
   { /* ... */ }
 
   //! Get the lower limit of the bin
-  IndepQuantity getLowerLimit() const;
+  const IndepQuantity& getLowerLimit() const;
 
   //! Get the upper limit of the bin
-  IndepQuantity getUpperLimit() const;
+  const IndepQuantity& getUpperLimit() const;
 
-  //! Set the result of the bin
-  void setResult( const ResultQuantity result );
+  //! Set the integral of the bin
+  void setIntegral( const ResultQuantity& integral );
 
-  //! Get the result of the bin
-  ResultQuantity getResult() const;
+  //! Get the integral of the bin
+  const ResultQuantity& getIntegral() const;
 
-  //! Set the error of the result
-  void setAbsoluteError( const ResultQuantity error );
+  //! Get the integral of the bin
+  ResultQuantity& getIntegral();
 
-  //! Get the error of the result
-  ResultQuantity getAbsoluteError() const;
+  //! Set the integral abs of the bin
+  void setIntegralAbs( const ResultQuantity& integral_abs );
 
-  //! Set the result and error of the bin
-  void setResultAndAbsoluteError( const ResultQuantity result,
-                                  const ResultQuantity error );
+  //! Get the integral abs of the bin
+  const ResultQuantity& getIntegralAbs() const;
+
+  //! Get the integral abs of the bin
+  ResultQuantity& getIntegralAbs();
+
+  //! Set the integral asc of the bin
+  void setIntegralAsc( const ResultQuantity& integral_asc );
+
+  //! Get the integral asc of the bin
+  const ResultQuantity& getIntegralAsc() const;
+
+  //! Get the integral asc of the bin
+  ResultQuantity& getIntegralAsc();
+
+  //! Set the error of the bin integral
+  void setAbsoluteError( const ResultQuantity& error );
+
+  //! Get the error of the integral
+  const ResultQuantity& getAbsoluteError() const;
+
+  //! Get the error of the integral
+  ResultQuantity& getAbsoluteError();
+
+  //! Set the integral and error of the bin
+  void setIntegralData( const ResultQuantity& integral,
+                        const ResultQuantity& integral_abs,
+                        const ResultQuantity& integral_asc,
+                        const ResultQuantity& error );
 
 private:
 
@@ -76,8 +105,14 @@ private:
   // The upper limit of the bin
   IndepQuantity d_upper_limit;
 
-  // The result of the bin
-  ResultQuantity d_result;
+  // The integral of the bin
+  ResultQuantity d_integral;
+
+  // The integral abs of the bin
+  ResultQuantity d_integral_abs;
+
+  // The integral asc of the bin
+  ResultQuantity d_integral_asc;
 
   // The absolute error of the bin
   ResultQuantity d_absolute_error;
