@@ -189,45 +189,72 @@ protected:
                            const int number_of_iterations ) const;
 
   // Initialize the bins for the adaptive Wynn Epsilon integration
-  template<int Points, typename Functor, typename ArrayType>
+  template<typename Functor, typename ArrayType>
   bool initializeBinsWynnEpsilon( Functor& integrand,
                                   const ArrayType& points_of_interest,
                                   BinArray& bin_array,
                                   IntegralQuantity& integral,
                                   IntegralQuantity& absolute_error,
+                                  IntegralQuantity& total_absolute_error,
+                                  IntegralQuantity& tolerance,
                                   int& ksgn ) const;
 
+  // Conduct the other iterations of the adaptive Wynn Epsilon integration
+  template<typename Functor>
+  void integrateAdaptivelyWynnEpsilonIterate(
+                                     Functor& integrand,
+                                     BinArray& bin_array,
+                                     IntegralQuantity& integral,
+                                     IntegralQuantity& absolute_error,
+                                     IntegralQuantity& total_absolute_error,
+                                     const IntegralQuantity& initial_tolerance,
+                                     const unsigned number_of_initial_bins,
+                                     const int ksgn ) const;
+  
   // Check the roundoff error 
-  void checkRoundoffError( 
-                       const ExtrapolatedQuadratureBin<T>& bin, 
-                       const ExtrapolatedQuadratureBin<T>& bin_1, 
-                       const ExtrapolatedQuadratureBin<T>& bin_2,    
-                       const IntegralQuantity bin_1_asc,
-                       const IntegralQuanttiy bin_2_asc,
-                       int& round_off_1,
-                       int& round_off_2,
-                       int& round_off_3,
-                       const bool extrapolate, 
-                       const int number_of_iterations ) const;
+  void checkRoundoffError( const ExtrapolatedQuadratureBinType& full_bin, 
+                           const ExtrapolatedQuadratureBinType& left_half_bin, 
+                           const ExtrapolatedQuadratureBinType& right_half_bin,
+                           int& round_off_failed_test_counter_a,
+                           int& round_off_failed_test_counter_b,
+                           int& round_off_failed_test_counter_c,
+                           const bool extrapolate, 
+                           const unsigned number_of_iterations ) const;
  
   // Sort the bin order from highest to lowest error 
-  void sortBins( 
-        std::vector<int>& bin_order,
-        BinArray& bin_array, 
-        const ExtrapolatedQuadratureBinType& bin_1,
-        const ExtrapolatedQuadratureBinType& bin_2,
-        const int number_of_intervals,
-        int nr_max ) const;
+  void sortBins( const ExtrapolatedQuadratureBinType& left_half_bin,
+                 const ExtrapolatedQuadratureBinType& right_half_bin,
+                 std::vector<int>& bin_order,
+                 BinArray& bin_array,
+                 int& nr_max,
+                 const unsigned number_of_bins ) const;
+
+  // Check if an extrapolation is required on the current worst bin
+  bool checkIfExtrapolationIsRequired( const BinArray& bin_array,
+                                       const std::vector<int>& bin_order_array,
+                                       const bool extrapolation_required,
+                                       const int max_level,
+                                       int& nr_max ) const;
+
+  // Check if all bins are ready for extrapolation
+  bool checkIfAllBinsReadyForExtrapolation(
+                                     const BinArray& bin_array,
+                                     const std::vector<int>& bin_order_array,
+                                     const IntegralType& error_over_large_bins,
+                                     const IntegralType& tolerance,
+                                     const unsigned number_of_bins,
+                                     const int max_level,
+                                     int& nr_max ) const;
 
   // Get the Wynn Epsilon-Algoirithm extrapolated value
   template<typename Array>
-  void getWynnEpsilonAlgorithmExtrapolation( 
-                                    Array& bin_extrapolated_result, 
-                                    Array& last_three_results, 
-                                    IntegralType& extrapolated_result, 
-                                    IntegralType& extrapolated_error,  
-                                    int& number_of_extrapolated_intervals,
-                                    int& number_of_extrapolated_calls  ) const;
+  void extrapolateWithWynnEpsilonAlgorithm( 
+                        std::vector<IntegralQuantity>& bin_extrapolated_result,
+                        std::vector<IntegralQuantity>& last_three_results, 
+                        IntegralQuantity& extrapolated_result, 
+                        IntegralQuantity& extrapolated_error,  
+                        int& number_of_extrapolated_intervals,
+                        int& number_of_extrapolated_calls  ) const;
 
 private:
 
