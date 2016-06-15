@@ -15,7 +15,7 @@
 
 // FRENSIE Includes
 #include "Utility_QuadratureBin.hpp"
-#include "Utility_ExtrapolatedQuadratureBin.hpp"
+#include "Utility_WynnEpsilonExtrapolationTable.hpp"
 #include "Utility_UnitTraits.hpp"
 #include "Utility_QuantityTraits.hpp"
 
@@ -110,8 +110,8 @@ public:
 
 protected:
 
-  // The extrapolated quadrature bin type
-  typedef ExtrapolatedQuadratureBin<ArgQuantity,IntegralQuantity> ExtrapolatedQuadratureBinType;
+  // The Wynn-Epslion extrapolation table type
+  typedef WynnEpsilonExtrapolationTable<IntegralQuantity> WynnEpsilonExtrapolationTableType;
 
   // Evaluate the integrand at the kronrod abscissae
   template<typename Functor>
@@ -168,25 +168,10 @@ protected:
   void integrateAdaptivelyIterate( Functor& integrand,
                                    QuadratureBinType& initial_bin ) const;
 
-  // Bisect and integrate the given bin interval
-  template<int Points, typename Functor>
-  void bisectAndIntegrateBinInterval(Functor& integrand, 
-                                     const QuadratureBinType& full_bin,
-                                     QuadratureBinType& left_half_bin,
-                                     QuadratureBinType& right_half_bin ) const;
-
   // Test if subinterval is too small
   template<int Points>
   bool subintervalTooSmall( const QuadratureBinType& left_bin,
                             const QuadratureBinType& right_bin ) const;
-
-  // Check the roundoff error 
-  void checkRoundoffError( const QuadratureBinType& full_bin, 
-                           const QuadratureBinType& left_half_bin, 
-                           const QuadratureBinType& right_half_bin,    
-                           int& round_off_failed_test_counter_a,
-                           int& round_off_failed_test_counter_b,
-                           const int number_of_iterations ) const;
 
   // Initialize the bins for the adaptive Wynn Epsilon integration
   template<typename Functor, typename ArrayType>
@@ -197,7 +182,7 @@ protected:
                                   IntegralQuantity& absolute_error,
                                   IntegralQuantity& total_absolute_error,
                                   IntegralQuantity& tolerance,
-                                  int& ksgn ) const;
+                                  bool& positive_integrand ) const;
 
   // Conduct the other iterations of the adaptive Wynn Epsilon integration
   template<typename Functor>
@@ -210,16 +195,6 @@ protected:
                                      const IntegralQuantity& initial_tolerance,
                                      const unsigned number_of_initial_bins,
                                      const int ksgn ) const;
-  
-  // Check the roundoff error 
-  void checkRoundoffError( const ExtrapolatedQuadratureBinType& full_bin, 
-                           const ExtrapolatedQuadratureBinType& left_half_bin, 
-                           const ExtrapolatedQuadratureBinType& right_half_bin,
-                           int& round_off_failed_test_counter_a,
-                           int& round_off_failed_test_counter_b,
-                           int& round_off_failed_test_counter_c,
-                           const bool extrapolate, 
-                           const unsigned number_of_iterations ) const;
  
   // Sort the bin order from highest to lowest error 
   void sortBins( const ExtrapolatedQuadratureBinType& left_half_bin,
