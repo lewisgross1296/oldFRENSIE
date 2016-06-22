@@ -16,6 +16,7 @@
 // FRENSIE Includes
 #include "Utility_QuadratureBin.hpp"
 #include "Utility_WynnEpsilonExtrapolationTable.hpp"
+#include "Utility_WynnEpsilonPriorityQueue.hpp"
 #include "Utility_UnitTraits.hpp"
 #include "Utility_QuantityTraits.hpp"
 
@@ -110,6 +111,12 @@ public:
 
 protected:
 
+  // The quadrature bin priority queue
+  typedef std::priority_queue<QuadratureBinType,std::vector<QuadratureBinType>,QuadratureBinType::compareBinErrors> BinQueue;
+
+  // The Wynn-Epsilon quadrature bin priority queue
+  typedef WynnEpsilonPriorityQueue<ArgQuantity,IntegralQuantity> WynnEpsilonBinQueue;
+
   // The Wynn-Epslion extrapolation table type
   typedef WynnEpsilonExtrapolationTable<IntegralQuantity> WynnEpsilonExtrapolationTableType;
 
@@ -177,7 +184,7 @@ protected:
   template<typename Functor, typename ArrayType>
   bool initializeBinsWynnEpsilon( Functor& integrand,
                                   const ArrayType& points_of_interest,
-                                  BinArray& bin_array,
+                                  WynnEpsilonBinQueue& bin_queue,
                                   IntegralQuantity& integral,
                                   IntegralQuantity& absolute_error,
                                   IntegralQuantity& total_absolute_error,
@@ -188,56 +195,14 @@ protected:
   template<typename Functor>
   void integrateAdaptivelyWynnEpsilonIterate(
                                      Functor& integrand,
-                                     BinArray& bin_array,
+                                     WynnEpsilonBinQueue& bin_queue,
                                      IntegralQuantity& integral,
                                      IntegralQuantity& absolute_error,
                                      IntegralQuantity& total_absolute_error,
                                      const IntegralQuantity& initial_tolerance,
-                                     const unsigned number_of_initial_bins,
-                                     const int ksgn ) const;
- 
-  // Sort the bin order from highest to lowest error 
-  void sortBins( const ExtrapolatedQuadratureBinType& left_half_bin,
-                 const ExtrapolatedQuadratureBinType& right_half_bin,
-                 std::vector<int>& bin_order,
-                 BinArray& bin_array,
-                 int& nr_max,
-                 const unsigned number_of_bins ) const;
-
-  // Check if an extrapolation is required on the current worst bin
-  bool checkIfExtrapolationIsRequired( const BinArray& bin_array,
-                                       const std::vector<int>& bin_order_array,
-                                       const bool extrapolation_required,
-                                       const int max_level,
-                                       int& nr_max ) const;
-
-  // Check if all bins are ready for extrapolation
-  bool checkIfAllBinsReadyForExtrapolation(
-                                     const BinArray& bin_array,
-                                     const std::vector<int>& bin_order_array,
-                                     const IntegralType& error_over_large_bins,
-                                     const IntegralType& tolerance,
-                                     const unsigned number_of_bins,
-                                     const int max_level,
-                                     int& nr_max ) const;
-
-  // Get the Wynn Epsilon-Algoirithm extrapolated value
-  template<typename Array>
-  void extrapolateWithWynnEpsilonAlgorithm( 
-                        std::vector<IntegralQuantity>& bin_extrapolated_result,
-                        std::vector<IntegralQuantity>& last_three_results, 
-                        IntegralQuantity& extrapolated_result, 
-                        IntegralQuantity& extrapolated_error,  
-                        int& number_of_extrapolated_intervals,
-                        int& number_of_extrapolated_calls  ) const;
+                                     const bool positive_integrand ) const;
 
 private:
-
-  // The quadrature bin priority queue
-  typedef std::priority_queue<QuadratureBinType> BinQueue;
-
-  // The extrapolated quadrature bin array
-  typedef std::vector<ExtrapolatedQuadratureBinType> BinArray;
   
   // The relative error tolerance
   FloatType d_relative_error_tol;

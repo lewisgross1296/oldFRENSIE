@@ -283,6 +283,42 @@ void QuadratureBin<ArgQuantity,IntegralQuantity>::resetIntegralData()
   d_integral_asc = IQT::zero();
   d_absolute_error = IQT::zero();
 }
+
+// Compare bin errors
+template<typename ArgQuantity, typename IntegralQuantity>
+bool QuadratureBin<ArgQuantity,IntegralQuantity>::compareBinErrors(
+                                                        const ThisType& bin_a,
+                                                        const ThisType& bin_b )
+{
+  return bin_a.getAbsoluteError() < bin_b.getAbsoluteError();
+}
+
+// Compare bisections levels (first) and bin errors
+template<typename ArgQuantity, typename IntegralQuantity>
+bool QuadratureBin<ArgQuantity,IntegralQuantity>::compareBisectionLevelsAndBinErrors(
+                                                     const ThisType& bin_a,
+                                                     const ThisType& bin_b,
+                                                     const unsigned max_level )
+{
+  // Both bisection levels less than max level: compare errors
+  if( bin_a.getBisectionLevel() < max_level &&
+      bin_b.getBisectionLevel() < max_level )
+    return bin_a.getAbsoluteError() < bin_b.getAbsoluteError();
+
+  // Only bin A bisection level less than max level: bin A is less than bin B
+  else if( bin_a.betBisectionLevel() < max_level &&
+           bin_b.getBisectionLevel() >= max_level )
+    return true;
+
+  // Only bin B bisection level less than max level: bin B is less than bin A
+  else if ( bin_a.getAbsoluteError() >= max_level &&
+            bin_b.getBisectionLevel() < max_level )
+    return false;
+
+  // Both bisection levels at or above max level: compare errors
+  else
+    return bin_a.getAbsoluteError() < bin_b.getAbsoluteError();
+}
   
 } // end Utility namespace
 

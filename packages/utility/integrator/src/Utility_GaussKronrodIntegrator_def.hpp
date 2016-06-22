@@ -302,8 +302,9 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
   // Check that there are at least two points
   testPrecondition( points_of_interest.size() >= 2 );
 
-  // The bin array (corresponding to points of interest and subintervals)
-  BinArray bin_array;
+  // The Wynn-Epsilon bin queue (heap) - The initial max bisection level
+  // is set to 1
+  WynnEpsilonBinQueue bin_queue( 1 );
 
   // The total absolute error (>= absolute error)
   IntegralQuantity total_absolute_error = IntegralQT::zero();
@@ -317,7 +318,7 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
   try{
     converged = this->initializeBinsWynnEpsilon( integrand,
                                                  points_of_interest,
-                                                 bin_array,
+                                                 bin_queue,
                                                  integral,
                                                  absolute_error,
                                                  total_absolute_error,
@@ -344,11 +345,10 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
   {
     try{
       this->integrateAdaptivelyWynnEpsilonIterate( integrand,
-                                                   bin_array,
+                                                   bin_queue,
                                                    integral,
                                                    absolute_error,
                                                    total_absolute_error,
-                                                   points_of_interest.size()-1,
                                                    positive_integrand );
     }
     EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
@@ -638,12 +638,7 @@ void UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
   // error, so it should not be placed in the priority queue).
   BinQueue bin_queue;
   
-  {
-    QuadratureBinType initial_bin_copy( initial_bin );
-  
-    // Initialize the bin priority queue with the initial bin
-    bin_queue.push( initial_bin_copy );
-  }
+  bin_queue.push( initial_bin_copy );
 
   // Keep track of a diverging integral
   GaussKronrodAdaptiveIntegrationDivergenceDetector<IntegralQuantity>
@@ -767,7 +762,7 @@ template<typename Functor, typename ArrayType>
 bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::initializeBinsWynnEpsilon(
                                         Functor& integrand,
                                         const ArrayType& points_of_interest,
-                                        BinArray& bin_array,
+                                        WynnEpsilonBinQueue& bin_queue,
                                         IntegralQuantity& integral,
                                         IntegralQuantity& absolute_error,
                                         IntegralQuantity& total_absolute_error,
@@ -795,6 +790,9 @@ bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::initializ
   // Initialize the total absolute error
   total_absolute_error = IntegralQT::zero();
 
+  // The array of initial bins
+  std::vector<QuadratureBinType> bin_array( number_of_bins );
+
   // Compute the integral between the points of interest
   for( int i = 0; i < number_of_bins; i++ )
   {
@@ -802,8 +800,6 @@ bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::initializ
                                       points_of_interest[i+1] );
 
     this->integrateWithPointRule<21>( integrand, bin_array[i] );
-
-    bin_array[i].setLevel( 0 );
 
     // Update the integral, integral abs, and absolute error values
     integral += bin_array[i].getIntegral();
@@ -849,6 +845,10 @@ bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::initializ
       total_absolute_error += bin_array[i].getAbsoluteError();
     }
 
+    // Add the bins to the bin queue
+    for( int i = 0; i < number_of_bins; ++i )
+      bin_queue.push( bin_array[i] );
+
     // Check if the integrand is positive
     if( fabs(integral) >= (IntegralQT::one() - 50*QT::epsilon())*integral_abs )
       positive_integrand = true;
@@ -864,12 +864,11 @@ template<typename FloatType, typename ArgUnit, typename IntegrandUnit>
 template<typename Functor>
 bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrateAdaptivelyWynnEpsilonIterate(
                                       Functor& integrand,
-                                      BinArray& bin_array,
+                                      WynnEpsilonBinQueue& bin_queue,
                                       IntegralQuantity& integral,
                                       IntegralQuantity& absolute_error,
                                       IntegralQuantity& total_absolute_error,
                                       const IntegralQuantit& initial_tolerance,
-                                      const unsigned number_of_initial_bins,
                                       const bool positive_integrand ) const
 {
   // Make sure the bin array has been initialized properly
@@ -879,25 +878,8 @@ bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
   absolute_error = IntegralQT::max();
   
   // Set the number of bins
-  unsigned number_of_bins = number_of_initial_bins; 
-
-  // Sort bins from greatest to lowest error (don't include the bins that
-  // have not been initialized yet)
-  std::sort( bin_array.rend()-number_of_bins, bin_array.rend() );
+  unsigned number_of_bins = bin_queue.size();
     
-  // Initialize the bin order array (keeps the errors sorted)
-  std::vector<int> bin_order( number_of_bins );
-
-  for( int i = 0; i < number_of_bins; ++i )
-    bin_order[i] = i;
-
-  // This index keeps track of the current problem bin (used in conjunction
-  // with the bin_order array
-  int nr_max = 0;
-
-  // The maximum number of bisections that may be done on a subinterval
-  int max_level = 1;
-
   // Determines if integrand behavior is currently allowing extrapolation
   bool extrapolation_allowed = true;
 
@@ -909,7 +891,7 @@ bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
   WynnEpsilonExtrapolationTableType extrapolation_table;
   extrapolation_table.appendIntegral( integral );
 
-  // Keep track of th extrapolated tolerance
+  // Keep track of the extrapolated tolerance
   IntegralQuantity extrapolated_tolerance = initial_tolerance;
   
   // Keep track of the error over the "large" bins - all bins that have
@@ -922,25 +904,16 @@ bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
   // Used to determine if the desired tolerance can be acheived
   int ktmin = 0;
   
-  for( ; number_of_bins < d_subinterval_limit; ++number_of_bins )
+  while( bin_queue.size() < d_subinterval_limit )
   {
     // Get the problem bin (bin with the largest error)
-    // Note: The bins were sorted from highest error to lowest error
-    //       during the initialization step.
-    ExtrapolatedQuadratureBinType problem_bin = bin_array[bin_order[nr_max]];
+    QuadratureBinType problem_bin = bin_queue.top();
+    bin_queue.pop();
     
-    ExtrapolatedQuadratureBinType
-      left_half_prolem_bin, right_half_problem_bin;
-    
-    // Always use the 21 point rule to integrate the two bin halfs
-    this->bisectAndIntegrateBinInterval<21>( integrand,
-                                             problem_bin,
-                                             left_half_problem_bin,
-                                             right_half_problem_bin );
-    
-    left_half_problem_bin.setLevel( problem_bin.getLevel() + 1 );
-    right_half_problem_bin.setLevel( problem_bin.getLevel() + 1 );
-    
+    // Bisect the problem bin
+    QuadratureBinType left_half_problem_bin, right_half_problem_bin;
+    problem_bin.bisect( left_half_problem_bin, right_half_problem_bin );
+
     // Check if the subinterval has gotten too small
     if( this->subintervalTooSmall<Points>( left_half_problem_bin,
                                            right_half_problem_bin ) )
@@ -949,6 +922,29 @@ bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
                        "Error: The minimum subinterval size was reached "
                        "before convergence!" );
     }
+
+    // Calculate the left half bin integral
+    try{
+      // Integrate over the left half bin
+      this->integrateWithPointRule<Points>( integrand, left_half_bin );
+    }
+    EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
+                             "Error: Could not integrate the left half"
+                             "subinterval ("
+                             << left_half_problem_bin.getLowerLimit() << ","
+                             << right_half_problem_bin.getLowerLimit() << ","
+                             << right_half_problem_bin.getUpperLimit() <<")!");
+
+    // Calculate the right half bin integral
+    try{
+      this->integrateWithPointRule<Points>( integrand, right_half_bin );
+    }
+    EXCEPTION_CATCH_RETHROW( Utility::IntegratorException,
+                             "Error: Could not integrate the right half"
+                             "subinterval ("
+                             << left_half_problem_bin.getLowerLimit() << ","
+                             << right_half_problem_bin.getLowerLimit() << ","
+                             << right_half_problem_bin.getUpperLimit() <<")!");
     
     // Check if the integral is diverging
     try{
@@ -967,19 +963,14 @@ bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
     total_absolute_error += left_half_problem_bin.getAbsoluteError() +
       right_half_problem_bin.getAbsoluteError() -
       problem_bin.getAbsoluteError();
-    
-    // Update and sort bin order
-    this->sortBins( left_half_problem_bin,
-                    right_half_problem_bin,
-                    bin_order, 
-                    bin_array,
-                    nr_max,
-                    number_of_bins );
+
+    // Add the new bins to the bin queue
+    bin_queue.push( left_half_problem_bin );
+    bin_queue.push( right_half_problem_bin );
     
     // Get the error tolerance
     IntegralQuantity tolerance = 
-      std::max( d_absolute_error_tol,
-                d_relative_error_tol*fabs(initial_bin.getIntegral()) );
+      std::max( d_absolute_error_tol, d_relative_error_tol*fabs(integral) );
 
     // Check if the integral has converged
     if( total_absolute_error <= tolerance )
@@ -997,29 +988,27 @@ bool UnitAwareGaussKronrodIntegrator<FloatType,ArgUnit,IntegrandUnit>::integrate
     else if( extrapolation_allowed )
     {
       // Update the error over "large" bins - bins that have not
-      // reach the max subdivision limit yet.
+      // reach the max bisection limit yet.
       error_over_large_bins -= problem_bin.getAbsoluteError();
 
-      if( left_half_problem_bin.getLevel() + 1 <= max_level )
+      // Check if the max bisection level has been reached 
+      if( left_half_problem_bin.getBisectionLevel() <
+          bin_queue.getMaxBisectionLevel() )
       {
         error_over_large_bins += left_half_problem_bin.getAbsoluteError()+
           right_half_problem_bin.getAbsoluteError();
       }
-
-      // Check if an extrapolation is required (at least one bin has
-      // reach the max subdivision level)
-      extrapolation_required =
-        this->checkIfExtrapolationIsRequired( bin_array,
-                                              bin_order,
-                                              extrapolation_required,
-                                              max_level,
-                                              nr_max );
+      else
+        extrapolation_required = true;
 
       // Check if there are any bins that have not reached the max
-      // subdivision limit - extrapolation can not be done until there
+      // subdivision limit - extrapolation cannot be done until there
       // are no more "large" bins.
       if( extrapolation_required )
       {
+        // Check if all bins are ready for extrapolation
+        if( bin_queue.top().getBisectionLevel() >=
+            bin_queue.getMaxBisectionLevel() )
         const bool all_bins_ready =
           this->checkIfAllBinsReadyForExtrapolation( bin_array,
                                                      bin_order,

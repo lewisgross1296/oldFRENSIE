@@ -29,6 +29,18 @@ protected:
 
 public:
 
+  //! This type
+  typedef QuadratureBin<ArgQuantity,IntegralQuantity> ThisType;
+
+  //! Compare bin errors
+  static bool compareBinErrors( const ThisType& bin_a,
+                                const ThisType& bin_b );
+
+  //! Compare bisections levels (first) and bin errors
+  static bool compareBisectionLevelsAndBinErrors( const ThisType& bin_a,
+                                                  const ThisType& bin_b,
+                                                  const unsigned max_level );
+
   //! Default constructor
   QuadratureBin();
 
