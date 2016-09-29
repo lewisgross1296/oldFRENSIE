@@ -131,12 +131,11 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator, isPointInMesh )
 
 //---------------------------------------------------------------------------//
 // Make sure that the data is being calculated correctly
-TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
-                   updateFromGlobalParticleSubtrackEndingEvent )
+TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator, data_analysis )
 {
   Teuchos::RCP<MonteCarlo::TetMeshTrackLengthFluxEstimator<MonteCarlo::WeightMultiplier> > estimator;
   Teuchos::RCP<MonteCarlo::Estimator> estimator_base;
-  double multiplier = 4.0;
+  double multiplier = 2.0;
   
   {
     estimator.reset(
@@ -253,8 +252,7 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
 
   // bin 0
   MonteCarlo::PhotonState particle( 0ull );
-  double weight = 0.5;
-  particle.setWeight( weight );
+  particle.setWeight( 1.0 );
   particle.setEnergy( 1.0 );
   particle.setDirection( direction_1 );
 
@@ -369,19 +367,19 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
   
   Teuchos::Array<Utility::Pair<double,double> >
       raw_bin_data( 2, Utility::Pair<double,double>( 
-                                   track_length*weight, 
-                                   track_length*track_length*weight*weight ) ),
+                                            track_length, 
+                                            track_length*track_length) ),
       raw_bin_data_copy;
 
   hdf5_file_handler.getRawEstimatorEntityBinData<moab::EntityHandle>(
                              0u, *tet, raw_bin_data_copy );
-  
+  out << *tet;
   UTILITY_TEST_COMPARE_FLOATING_ARRAYS( raw_bin_data, 
                                         raw_bin_data_copy,
                                         1e-12 );
   
   ++tet;
-  
+  out << *tet;
   hdf5_file_handler.getRawEstimatorEntityBinData<moab::EntityHandle>(
                              0u, *tet, raw_bin_data_copy );
                            
@@ -390,7 +388,7 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
                                         1e-12 );
   
   ++tet;
-  
+  out << *tet;
   hdf5_file_handler.getRawEstimatorEntityBinData<moab::EntityHandle>(
                              0u, *tet, raw_bin_data_copy );
                            
@@ -399,7 +397,7 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
                                         1e-12 );
   
   ++tet;
-  
+  out << *tet;
   hdf5_file_handler.getRawEstimatorEntityBinData<moab::EntityHandle>(
                              0u, *tet, raw_bin_data_copy );
                            
@@ -408,7 +406,7 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
                                         1e-12 );
   
   ++tet;
-  
+  out << *tet;
   hdf5_file_handler.getRawEstimatorEntityBinData<moab::EntityHandle>(
                              0u, *tet, raw_bin_data_copy );
                            
@@ -417,7 +415,7 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
                                         1e-12 );
   
   ++tet;
-  
+  out << *tet;
   hdf5_file_handler.getRawEstimatorEntityBinData<moab::EntityHandle>(
                              0u, *tet, raw_bin_data_copy );
                            
@@ -430,7 +428,7 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
   
   Teuchos::Array<Utility::Pair<double,double> >
     processed_bin_data( 2, Utility::Pair<double,double>(
-                                multiplier*track_length*weight/volume, 0.0 ) ),
+                                         multiplier*track_length/volume, 0.0 ) ),
     processed_bin_data_copy;
     
   hdf5_file_handler.getProcessedEstimatorEntityBinData<moab::EntityHandle>(
@@ -490,8 +488,8 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
   
   Teuchos::Array<Utility::Pair<double,double> >
     raw_total_bin_data( 2, Utility::Pair<double,double>(
-                         num_tets*track_length*weight,
-                         num_tets*num_tets*track_length*track_length*weight*weight ) ),
+                         num_tets*track_length,
+                         num_tets*num_tets*track_length*track_length ) ),
     raw_total_bin_data_copy;
   
   hdf5_file_handler.getRawEstimatorTotalBinData(
@@ -551,7 +549,7 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
   
   Teuchos::Array<Utility::Pair<double,double> >
     processed_total_bin_data( 2, Utility::Pair<double,double>(
-                         multiplier*num_tets*track_length*weight,
+                         2.0*num_tets*track_length,
                          0.0 ) ),
     processed_total_bin_data_copy; 
 
@@ -611,10 +609,10 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
   tet = all_tet_elements.begin();
   
   Utility::Quad<double,double,double,double>
-    raw_moments( track_length*weight*2.0,
-                 track_length*track_length*weight*weight*4.0,
-                 track_length*track_length*track_length*weight*weight*weight*8.0,
-                 track_length*track_length*track_length*track_length*weight*weight*weight*weight*16.0 );
+    raw_moments( 2.0*track_length,
+                 4.0*track_length*track_length,
+                 8.0*track_length*track_length*track_length,
+                 16.0*track_length*track_length*track_length*track_length );
                 
   Teuchos::Array<Utility::Quad<double,double,double,double> >
     raw_total_data( 1, raw_moments ),
@@ -677,7 +675,7 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
   tet = all_tet_elements.begin();
   
   Utility::Quad<double,double,double,double>
-    processed_moments( multiplier*track_length*weight*2.0/volume,
+    processed_moments( 4.0*track_length/volume,
                        0.0,
                        0.0,
                        0.0 );
@@ -739,10 +737,12 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
                                         1e-12 );
 
   // Retrieve the raw estimator total data  
-  raw_total_data[0]( num_tets*track_length*weight*2.0,
-                     num_tets*num_tets*track_length*track_length*weight*weight*4.0,
-                     num_tets*num_tets*num_tets*track_length*track_length*track_length*weight*weight*weight*8.0,
-                     num_tets*num_tets*num_tets*num_tets*track_length*track_length*track_length*track_length*weight*weight*weight*weight*16.0 );
+  raw_total_data[0]( num_tets*track_length*2.0,
+                     (num_tets*num_tets)*(track_length*track_length)*4.0,
+                     (num_tets*num_tets*num_tets)*(track_length*track_length*
+                       track_length)*8.0,
+                     (num_tets*num_tets*num_tets*num_tets)*(track_length*
+                       track_length*track_length*track_length)*16.0 );
                 
   hdf5_file_handler.getRawEstimatorTotalData( 0u, raw_total_data_copy );
   
@@ -751,7 +751,7 @@ TEUCHOS_UNIT_TEST( TetMeshTrackLengthFluxEstimator,
                                         1e-12 );
 
   // Retrieve the processed estimator total data
-  processed_total_data[0]( num_tets*track_length*weight*multiplier*2.0,
+  processed_total_data[0]( num_tets*track_length*4.0,
                            0.0,
                            0.0,
                            0.0 );
